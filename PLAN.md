@@ -52,22 +52,22 @@ It is also a portfolio piece: a real product backed by a real, end-to-end data p
 
 ### Tech decisions
 
-| Area | Choice | Why | Alternative considered |
-|---|---|---|---|
-| App language | TypeScript (strict) | One language across web + realtime | Python backend (kept for data layer) |
-| Frontend | Next.js (App Router) | Matches hulash.com, free Vercel hosting | Vite SPA |
-| 3D | three.js via React Three Fiber + drei | Mature, LDraw loader available | Babylon.js |
-| Multiplayer state | Yjs (CRDT) + awareness | Conflict-free concurrent edits, presence built in | Liveblocks (paid tiers) |
-| Realtime transport | y-partyserver on Cloudflare Durable Objects | Free tier, same code local and deployed | Self-hosted y-websocket |
-| Local UI state | Zustand | Small, simple | Redux |
-| DB / auth / storage | Supabase | Free tier, Postgres for CDC | Firebase |
-| Brick geometry | Procedural (Phase 1) → LDraw meshes (Phase 4) | Fast soft start, keyed by LDraw IDs so swap is painless | LDraw from day one |
-| Parts mapping | Rebrickable API | Maps LDraw IDs ↔ LEGO element IDs ↔ BrickLink IDs | Manual mapping |
-| Ordering export | BrickLink Wanted List XML + LEGO element IDs | No public LEGO Pick a Brick API | — |
-| Streaming | Redpanda + Spark Structured Streaming | Kafka API, single container; Spark aligns with Databricks | Flink |
-| Table format | Delta Lake on MinIO | Databricks-aligned | Iceberg |
-| Modelling | dbt + DuckDB | Free, fast, portfolio standard | — |
-| Orchestration | Airflow | Industry standard | Dagster |
+| Area                | Choice                                        | Why                                                       | Alternative considered               |
+| ------------------- | --------------------------------------------- | --------------------------------------------------------- | ------------------------------------ |
+| App language        | TypeScript (strict)                           | One language across web + realtime                        | Python backend (kept for data layer) |
+| Frontend            | Next.js (App Router)                          | Matches hulash.com, free Vercel hosting                   | Vite SPA                             |
+| 3D                  | three.js via React Three Fiber + drei         | Mature, LDraw loader available                            | Babylon.js                           |
+| Multiplayer state   | Yjs (CRDT) + awareness                        | Conflict-free concurrent edits, presence built in         | Liveblocks (paid tiers)              |
+| Realtime transport  | y-partyserver on Cloudflare Durable Objects   | Free tier, same code local and deployed                   | Self-hosted y-websocket              |
+| Local UI state      | Zustand                                       | Small, simple                                             | Redux                                |
+| DB / auth / storage | Supabase                                      | Free tier, Postgres for CDC                               | Firebase                             |
+| Brick geometry      | Procedural (Phase 1) → LDraw meshes (Phase 4) | Fast soft start, keyed by LDraw IDs so swap is painless   | LDraw from day one                   |
+| Parts mapping       | Rebrickable API                               | Maps LDraw IDs ↔ LEGO element IDs ↔ BrickLink IDs         | Manual mapping                       |
+| Ordering export     | BrickLink Wanted List XML + LEGO element IDs  | No public LEGO Pick a Brick API                           | —                                    |
+| Streaming           | Redpanda + Spark Structured Streaming         | Kafka API, single container; Spark aligns with Databricks | Flink                                |
+| Table format        | Delta Lake on MinIO                           | Databricks-aligned                                        | Iceberg                              |
+| Modelling           | dbt + DuckDB                                  | Free, fast, portfolio standard                            | —                                    |
+| Orchestration       | Airflow                                       | Industry standard                                         | Dagster                              |
 
 ## 4. Repository structure
 
@@ -96,14 +96,14 @@ Grid: x/z in studs, y in plates (1 brick = 3 plates). All integers.
 
 ```ts
 type Brick = {
-  id: string;        // nanoid
-  part: string;      // LDraw part ID, e.g. "3001" (Brick 2x4)
-  color: number;     // LDraw colour code, e.g. 4 (Red)
-  x: number;         // studs, integer
-  y: number;         // plates, integer (0 = sits on baseplate)
-  z: number;         // studs, integer
+  id: string; // nanoid
+  part: string; // LDraw part ID, e.g. "3001" (Brick 2x4)
+  color: number; // LDraw colour code, e.g. 4 (Red)
+  x: number; // studs, integer
+  y: number; // plates, integer (0 = sits on baseplate)
+  z: number; // studs, integer
   rot: 0 | 1 | 2 | 3; // quarter turns around Y
-  by: string;        // clientId of the placer (for undo + attribution)
+  by: string; // clientId of the placer (for undo + attribution)
 };
 ```
 

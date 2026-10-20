@@ -28,6 +28,7 @@ Build Phase 1 — Soft start, exactly as scoped in PLAN.md section 6. This runs 
 **Colours.** About 12 LDraw colour codes with accurate RGB from LDConfig.ldr: Black 0, Blue 1, Green 2, Red 4, Bright Pink 29, Yellow 14, White 15, Orange 25, Lime 27, Tan 19, Light Bluish Gray 71, Dark Bluish Gray 72. Verify against LDConfig.
 
 **Builder UX.** This must feel simple:
+
 - 32×32 baseplate, orbit camera (left-drag orbit, right-drag pan, scroll zoom), soft lighting with shadows
 - Hovering shows a translucent ghost brick snapped to the grid; it sits on the baseplate or on top of whatever brick is under the cursor
 - Click to place; ghost turns red where placement would collide
@@ -36,6 +37,7 @@ Build Phase 1 — Soft start, exactly as scoped in PLAN.md section 6. This runs 
 - Ctrl/Cmd+Z and Shift+Ctrl/Cmd+Z for undo/redo
 
 **Multiplayer.**
+
 - Route `/build/[roomId]`. Landing page has a "Start building" button that creates a room with a nanoid and a "Copy invite link" button inside the room.
 - Yjs layout exactly as in PLAN.md section 5.
 - Presence via awareness: a random friendly name and colour per tab (editable), other people's cursors and ghost bricks visible in the scene, a small list of who's in the room.

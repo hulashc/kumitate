@@ -23,12 +23,12 @@ and phases. This file only holds the working rules.
 
 ## Layout
 
-| Path                   | What                                                              |
-| ---------------------- | ----------------------------------------------------------------- |
+| Path                   | What                                                                                           |
+| ---------------------- | ---------------------------------------------------------------------------------------------- |
 | `packages/brick-core/` | Shared types, part catalogue, colours, grid maths, collision, zod schema. No 3D or React deps. |
-| `apps/web/`            | Next.js App Router builder (React Three Fiber).                   |
-| `apps/realtime/`       | Cloudflare Worker — Yjs rooms on Durable Objects via y-partyserver. |
-| `data/`                | Data platform. Phase 3+.                                           |
+| `apps/web/`            | Next.js App Router builder (React Three Fiber).                                                |
+| `apps/realtime/`       | Cloudflare Worker — Yjs rooms on Durable Objects via y-partyserver.                            |
+| `data/`                | Data platform. Phase 3+.                                                                       |
 
 ## Commands
 
