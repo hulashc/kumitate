@@ -1,0 +1,8 @@
+# Keep LF in the working tree on every platform so Prettier (endOfLine: lf)
+# and git never disagree about line endings.
+* text=auto eol=lf
+
+pnpm-lock.yaml linguist-generated=true -diff
+*.png binary
+*.jpg binary
+*.ico binary
