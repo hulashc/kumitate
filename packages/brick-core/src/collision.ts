@@ -18,7 +18,7 @@ import {
   occupiedCells,
   topOf,
   type Placement,
-} from "./grid.js";
+} from "./grid";
 
 /** Why a placement was rejected. */
 export type PlacementError = "collision" | "out-of-bounds" | "below-baseplate";

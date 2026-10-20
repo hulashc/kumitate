@@ -15,7 +15,7 @@
  * export should prefer the alias when one is present.
  */
 
-import { PLATES_PER_BRICK } from "./units.js";
+import { PLATES_PER_BRICK } from "./units";
 
 export type PartCategory = "brick" | "plate" | "tile" | "slope";
 

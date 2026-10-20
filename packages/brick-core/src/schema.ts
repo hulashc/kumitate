@@ -8,9 +8,9 @@
  */
 
 import { z } from "zod";
-import { BASEPLATE_SIZE, type Brick } from "./grid.js";
-import { getColor } from "./colors.js";
-import { resolvePart } from "./parts.js";
+import { BASEPLATE_SIZE, type Brick } from "./grid";
+import { getColor } from "./colors";
+import { resolvePart } from "./parts";
 
 /** Bumped whenever the export format changes incompatibly. */
 export const BUILD_FORMAT_VERSION = 1;

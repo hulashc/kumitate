@@ -5,10 +5,10 @@ import {
   createBuildFile,
   parseBuildFile,
   reviewBuild,
-} from "./schema.js";
-import type { Brick } from "./grid.js";
-import { PALETTE } from "./colors.js";
-import { PARTS, resolvePart } from "./parts.js";
+} from "./schema";
+import type { Brick } from "./grid";
+import { PALETTE } from "./colors";
+import { PARTS, resolvePart } from "./parts";
 
 const BRICKS: Brick[] = [
   { id: "a", part: "3001", color: 4, x: 0, y: 0, z: 0, rot: 0, by: "client-1" },

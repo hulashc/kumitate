@@ -1,0 +1,54 @@
+.main {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 2rem 1.25rem;
+  background:
+    radial-gradient(ellipse at 20% 0%, #1b2a3a 0%, transparent 55%),
+    radial-gradient(ellipse at 90% 100%, #1a2c3c 0%, transparent 50%), var(--bg);
+}
+
+.card {
+  width: min(34rem, 100%);
+  padding: 2.25rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.title {
+  margin: 0 0 0.5rem;
+  font-size: 2.4rem;
+  letter-spacing: -0.02em;
+}
+
+.tagline {
+  margin: 0 0 1.75rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.hints {
+  margin: 1.75rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.hints strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.footnote {
+  margin: 1.75rem 0 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}

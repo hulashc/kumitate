@@ -14,9 +14,9 @@ import {
   rotatedFootprint,
   studCells,
   topOf,
-} from "./grid.js";
-import { getPart, localStudCells, type Part } from "./parts.js";
-import { LDU_PER_BRICK, PLATES_PER_BRICK, platesToScene, studsToScene } from "./units.js";
+} from "./grid";
+import { getPart, localStudCells, type Part } from "./parts";
+import { LDU_PER_BRICK, PLATES_PER_BRICK, platesToScene, studsToScene } from "./units";
 
 /** Catalogue lookup that fails the test rather than returning undefined. */
 function part(id: string): Part {

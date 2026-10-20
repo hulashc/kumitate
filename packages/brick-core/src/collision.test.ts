@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { Occupancy, canPlace } from "./collision.js";
-import { BASEPLATE_SIZE, type Placement, type Rotation } from "./grid.js";
-import { getPart, type Part } from "./parts.js";
+import { Occupancy, canPlace } from "./collision";
+import { BASEPLATE_SIZE, type Placement, type Rotation } from "./grid";
+import { getPart, type Part } from "./parts";
 
 function part(id: string): Part {
   const found = getPart(id);

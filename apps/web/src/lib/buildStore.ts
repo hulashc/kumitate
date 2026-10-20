@@ -1,0 +1,336 @@
+/**
+ * The build document.
+ *
+ * All build state lives in a Yjs doc — never in React state — so a solo session and a shared
+ * room are the same code path (PLAN.md principle 1). `BuildStore` wraps the doc and keeps two
+ * derived views in sync incrementally: a plain `Map` of bricks for rendering, and an
+ * {@link Occupancy} index for collision and drop tests.
+ *
+ * Deriving incrementally rather than rebuilding matters: a remote peer placing one brick should
+ * cost one index write, not a full rebuild of a 2,000 brick scene.
+ *
+ * Yjs layout (PLAN.md section 5):
+ *   doc.getMap("bricks")  id -> Y.Map { part, color, x, y, z, rot, by }
+ *   doc.getMap("meta")    { title, baseplate, createdAt }
+ */
+
+import * as Y from "yjs";
+import {
+  BASEPLATE_SIZE,
+  Occupancy,
+  type Brick,
+  type Rotation,
+  getPart,
+  toPlacement,
+} from "@kumitate/brick-core";
+
+export const BRICKS_KEY = "bricks";
+export const META_KEY = "meta";
+
+/**
+ * Origin tag for every transaction this tab makes.
+ *
+ * `Y.UndoManager` is scoped to this origin, which is the whole mechanism behind "undo only ever
+ * undoes my own bricks" — remote updates arrive under a different origin and are never tracked.
+ */
+export const LOCAL_ORIGIN = Symbol("kumitate.local");
+
+export type BuildMetaState = {
+  title: string;
+  baseplate: number;
+};
+
+export function bricksMap(doc: Y.Doc): Y.Map<Y.Map<unknown>> {
+  return doc.getMap<Y.Map<unknown>>(BRICKS_KEY);
+}
+
+export function metaMap(doc: Y.Doc): Y.Map<unknown> {
+  return doc.getMap(META_KEY);
+}
+
+function isRotation(value: unknown): value is Rotation {
+  return value === 0 || value === 1 || value === 2 || value === 3;
+}
+
+/**
+ * Read one brick out of its Y.Map.
+ *
+ * Returns `null` rather than throwing on anything malformed. A peer running different code must
+ * never be able to crash this client's render loop by writing an unexpected field.
+ */
+function readBrick(id: string, entry: Y.Map<unknown>): Brick | null {
+  const part = entry.get("part");
+  const color = entry.get("color");
+  const x = entry.get("x");
+  const y = entry.get("y");
+  const z = entry.get("z");
+  const rot = entry.get("rot");
+  const by = entry.get("by");
+
+  if (typeof part !== "string" || part.length === 0) return null;
+  if (typeof color !== "number" || !Number.isFinite(color)) return null;
+  if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) return null;
+  if (!isRotation(rot)) return null;
+
+  return {
+    id,
+    part,
+    color,
+    x: x as number,
+    y: y as number,
+    z: z as number,
+    rot,
+    by: typeof by === "string" ? by : "",
+  };
+}
+
+/** Write a brick into the doc as a fresh Y.Map. */
+function writeBrick(brick: Brick): Y.Map<unknown> {
+  const entry = new Y.Map<unknown>();
+  entry.set("part", brick.part);
+  entry.set("color", brick.color);
+  entry.set("x", brick.x);
+  entry.set("y", brick.y);
+  entry.set("z", brick.z);
+  entry.set("rot", brick.rot);
+  entry.set("by", brick.by);
+  return entry;
+}
+
+type Listener = () => void;
+
+/**
+ * Observable view over a build document.
+ *
+ * React subscribes through `useSyncExternalStore`, so `getSnapshot` must return a referentially
+ * stable array between changes — it is cached and only rebuilt when the doc actually moves.
+ */
+export class BuildStore {
+  readonly doc: Y.Doc;
+  readonly undoManager: Y.UndoManager;
+
+  readonly #bricks = new Map<string, Brick>();
+  readonly #occupancy = new Occupancy();
+  readonly #listeners = new Set<Listener>();
+
+  #snapshot: Brick[] = [];
+  #snapshotDirty = true;
+  #metaSnapshot: BuildMetaState = { title: "Untitled build", baseplate: BASEPLATE_SIZE };
+  #metaDirty = true;
+  #disposed = false;
+
+  readonly #onBricksChanged: (events: Y.YEvent<Y.Map<unknown>>[]) => void;
+  readonly #onMetaChanged: () => void;
+
+  constructor(doc: Y.Doc) {
+    this.doc = doc;
+
+    const bricks = bricksMap(doc);
+    const meta = metaMap(doc);
+
+    // Pick up whatever is already in the doc (a restored snapshot, or sync that landed first).
+    for (const [id, entry] of bricks.entries()) this.#upsert(id, entry);
+
+    this.#onBricksChanged = (events) => this.#applyEvents(events);
+    this.#onMetaChanged = () => {
+      this.#metaDirty = true;
+      this.#emit();
+    };
+
+    bricks.observeDeep(this.#onBricksChanged);
+    meta.observe(this.#onMetaChanged);
+
+    this.undoManager = new Y.UndoManager(bricks, {
+      trackedOrigins: new Set([LOCAL_ORIGIN]),
+      captureTimeout: 300,
+    });
+  }
+
+  /** Stop observing. Safe to call twice. */
+  destroy(): void {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    bricksMap(this.doc).unobserveDeep(this.#onBricksChanged);
+    metaMap(this.doc).unobserve(this.#onMetaChanged);
+    this.undoManager.destroy();
+    this.#listeners.clear();
+  }
+
+  // ---- React integration -------------------------------------------------
+
+  subscribe = (listener: Listener): (() => void) => {
+    this.#listeners.add(listener);
+    return () => {
+      this.#listeners.delete(listener);
+    };
+  };
+
+  getSnapshot = (): Brick[] => {
+    if (this.#snapshotDirty) {
+      this.#snapshot = [...this.#bricks.values()];
+      this.#snapshotDirty = false;
+    }
+    return this.#snapshot;
+  };
+
+  getMetaSnapshot = (): BuildMetaState => {
+    if (this.#metaDirty) {
+      const meta = metaMap(this.doc);
+      const title = meta.get("title");
+      const baseplate = meta.get("baseplate");
+      this.#metaSnapshot = {
+        title: typeof title === "string" ? title : "Untitled build",
+        baseplate: typeof baseplate === "number" ? baseplate : BASEPLATE_SIZE,
+      };
+      this.#metaDirty = false;
+    }
+    return this.#metaSnapshot;
+  };
+
+  // ---- Reads -------------------------------------------------------------
+
+  /** Live occupancy index. Mutated in place as the doc changes — never hold a stale copy. */
+  get occupancy(): Occupancy {
+    return this.#occupancy;
+  }
+
+  get count(): number {
+    return this.#bricks.size;
+  }
+
+  getBrick(id: string): Brick | undefined {
+    return this.#bricks.get(id);
+  }
+
+  // ---- Writes ------------------------------------------------------------
+
+  /** Add a brick under the local origin, so it lands in this tab's undo stack. */
+  addBrick(brick: Brick): void {
+    this.doc.transact(() => {
+      bricksMap(this.doc).set(brick.id, writeBrick(brick));
+    }, LOCAL_ORIGIN);
+  }
+
+  /** Remove a brick. Returns false if it was already gone. */
+  removeBrick(id: string): boolean {
+    const bricks = bricksMap(this.doc);
+    if (!bricks.has(id)) return false;
+    this.doc.transact(() => {
+      bricks.delete(id);
+    }, LOCAL_ORIGIN);
+    return true;
+  }
+
+  /** Replace the whole build — used by import. One transaction, so undo reverses it in one step. */
+  replaceAll(next: readonly Brick[], meta?: Partial<BuildMetaState>): void {
+    this.doc.transact(() => {
+      const bricks = bricksMap(this.doc);
+      bricks.clear();
+      for (const brick of next) bricks.set(brick.id, writeBrick(brick));
+      if (meta) this.#writeMeta(meta);
+    }, LOCAL_ORIGIN);
+  }
+
+  /** Delete every brick in one undoable step. */
+  clear(): void {
+    this.doc.transact(() => {
+      bricksMap(this.doc).clear();
+    }, LOCAL_ORIGIN);
+  }
+
+  setMeta(meta: Partial<BuildMetaState>): void {
+    this.doc.transact(() => this.#writeMeta(meta), LOCAL_ORIGIN);
+  }
+
+  /** Seed title/baseplate only if the room is brand new, so joiners never clobber them. */
+  initialiseMeta(meta: BuildMetaState): void {
+    const map = metaMap(this.doc);
+    if (map.has("baseplate")) return;
+    this.doc.transact(() => {
+      map.set("title", meta.title);
+      map.set("baseplate", meta.baseplate);
+      map.set("createdAt", new Date().toISOString());
+    }, LOCAL_ORIGIN);
+  }
+
+  undo(): void {
+    this.undoManager.undo();
+  }
+
+  redo(): void {
+    this.undoManager.redo();
+  }
+
+  get canUndo(): boolean {
+    return this.undoManager.canUndo();
+  }
+
+  get canRedo(): boolean {
+    return this.undoManager.canRedo();
+  }
+
+  // ---- Internals ---------------------------------------------------------
+
+  #writeMeta(meta: Partial<BuildMetaState>): void {
+    const map = metaMap(this.doc);
+    if (meta.title !== undefined) map.set("title", meta.title);
+    if (meta.baseplate !== undefined) map.set("baseplate", meta.baseplate);
+  }
+
+  #applyEvents(events: Y.YEvent<Y.Map<unknown>>[]): void {
+    const touched = new Set<string>();
+    const dropped = new Set<string>();
+
+    for (const event of events) {
+      if (event.path.length === 0) {
+        for (const [key, change] of event.changes.keys) {
+          if (change.action === "delete") dropped.add(key);
+          else touched.add(key);
+        }
+      } else {
+        // A field inside one brick changed; re-read that brick whole.
+        touched.add(String(event.path[0]));
+      }
+    }
+
+    const bricks = bricksMap(this.doc);
+    for (const id of dropped) this.#remove(id);
+    for (const id of touched) {
+      const entry = bricks.get(id);
+      if (entry) this.#upsert(id, entry);
+      else this.#remove(id);
+    }
+
+    if (dropped.size > 0 || touched.size > 0) {
+      this.#snapshotDirty = true;
+      this.#emit();
+    }
+  }
+
+  #upsert(id: string, entry: Y.Map<unknown>): void {
+    const brick = readBrick(id, entry);
+    if (!brick) {
+      this.#remove(id);
+      return;
+    }
+
+    this.#bricks.set(id, brick);
+
+    const part = getPart(brick.part);
+    if (part) this.#occupancy.add(id, toPlacement(brick, part));
+    // An unknown part is still rendered (with a fallback mesh) but is left out of the index —
+    // guessing its footprint would make collision answers differ between clients.
+    else this.#occupancy.remove(id);
+
+    this.#snapshotDirty = true;
+  }
+
+  #remove(id: string): void {
+    if (this.#bricks.delete(id)) this.#snapshotDirty = true;
+    this.#occupancy.remove(id);
+  }
+
+  #emit(): void {
+    for (const listener of this.#listeners) listener();
+  }
+}

@@ -9,7 +9,7 @@
  *     rounding anywhere, which is what keeps concurrent edits from drifting.
  */
 
-import type { Part } from "./parts.js";
+import type { Part } from "./parts";
 
 /** Quarter turns around the Y axis. */
 export type Rotation = 0 | 1 | 2 | 3;
