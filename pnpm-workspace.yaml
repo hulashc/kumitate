@@ -1,3 +1,13 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+minimumReleaseAgeExclude:
+  - miniflare@5.20261019.1-beta
+  - wrangler@4.151.3
+
+# pnpm blocks postinstall scripts by default. Both of these need theirs: workerd unpacks the
+# Workers runtime binary that `wrangler dev` executes, and esbuild unpacks its native binary.
+allowBuilds:
+  esbuild: true
+  workerd: true

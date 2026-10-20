@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kumitate-realtime",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // One Durable Object per build room. partyserver derives the URL segment from the binding
+  // name in kebab-case, so `BuildRoom` is reached at /parties/build-room/:roomId.
+  "durable_objects": {
+    "bindings": [{ "name": "BuildRoom", "class_name": "BuildRoom" }],
+  },
+
+  // SQLite-backed Durable Objects are the only kind available on the free tier.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BuildRoom"] }],
+}
