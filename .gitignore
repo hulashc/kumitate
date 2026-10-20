@@ -1,0 +1,30 @@
+node_modules/
+dist/
+.next/
+out/
+build/
+coverage/
+
+# wrangler
+.wrangler/
+.dev.vars
+
+# env
+.env
+.env.local
+.env.*.local
+
+# editors / os
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# tooling caches
+*.tsbuildinfo
+.eslintcache
