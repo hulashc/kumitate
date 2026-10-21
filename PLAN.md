@@ -123,20 +123,20 @@ Yjs layout: `doc.getMap("bricks")` keyed by brick id → `Y.Map` of the fields a
 
 Goal: two browser windows on one machine, building together in the same scene.
 
-- [ ] pnpm monorepo with `apps/web`, `apps/realtime`, `packages/brick-core`
-- [ ] Part catalogue (~16 parts) with procedural geometry: box body + cylinder studs, keyed by LDraw ID
-- [ ] Colour palette (~12 LDraw colours)
-- [ ] Baseplate (32×32), orbit camera, soft lighting
-- [ ] Place brick: hover shows ghost brick snapped to the grid, click to place on baseplate or on top of studs
-- [ ] Rotate (R), delete (Delete/Backspace or right-click), pick colour, pick part
-- [ ] Collision check: can't place overlapping bricks
-- [ ] Yjs room per URL `/build/[roomId]`, landing page creates a room
-- [ ] Presence: names, colours, live cursors and ghost bricks of others
-- [ ] Per-user undo/redo (Yjs UndoManager scoped to local origin)
-- [ ] Persistence in the Durable Object (refresh keeps the build)
-- [ ] Export / import build as JSON
-- [ ] Unit tests for grid maths and collision (vitest)
-- [ ] One command to run everything locally: `pnpm dev`
+- [x] pnpm monorepo with `apps/web`, `apps/realtime`, `packages/brick-core`
+- [x] Part catalogue (~16 parts) with procedural geometry: box body + cylinder studs, keyed by LDraw ID
+- [x] Colour palette (~12 LDraw colours)
+- [x] Baseplate (32×32), orbit camera, soft lighting
+- [x] Place brick: hover shows ghost brick snapped to the grid, click to place on baseplate or on top of studs
+- [x] Rotate (R), delete (Delete/Backspace or right-click), pick colour, pick part
+- [x] Collision check: can't place overlapping bricks
+- [x] Yjs room per URL `/build/[roomId]`, landing page creates a room
+- [x] Presence: names, colours, live cursors and ghost bricks of others
+- [x] Per-user undo/redo (Yjs UndoManager scoped to local origin)
+- [x] Persistence in the Durable Object (refresh keeps the build)
+- [x] Export / import build as JSON
+- [x] Unit tests for grid maths and collision (vitest)
+- [x] One command to run everything locally: `pnpm dev`
 
 **Done when:** two windows on the same room see each other's bricks and cursors within a blink, undo only undoes your own actions, and a refresh keeps the build.
 
@@ -193,4 +193,39 @@ Goal: two browser windows on one machine, building together in the same scene.
 
 Claude Code appends one entry per session: date, what was done, what's next, any decisions made.
 
-- _(empty)_
+### 2026-10-21 — Phase 1 built
+
+**Done.** All of Phase 1. pnpm monorepo (strict TS, ESLint, Prettier); `brick-core` with the
+16-part catalogue, 12-colour palette, integer grid maths, occupancy/collision index and a
+versioned zod build schema; `apps/web` builder on React Three Fiber; `apps/realtime` Yjs rooms on
+Durable Objects; rooms, live sync, presence, per-user undo, persistence, JSON export/import.
+87 vitest tests pass, plus an end-to-end `sync-check` script that drives three real clients
+through the running worker.
+
+**Decisions made.**
+
+- **Two LDraw part IDs in the brief were stale** and are corrected in the catalogue: Plate 1x2 is
+  `3023b` (`3023` was moved 2024-07) and Plate 1x1 Round is `6141` (`4073` was moved 2025-04).
+  Both verified against `library.ldraw.org`. The catalogue keys on the canonical ID and keeps the
+  legacy ID in `aliases`, because BrickLink still uses the old numbers and Phase 3's Wanted List
+  export will need them. All 12 colours were verified against `LDConfig.ldr`.
+- **Bricks store their minimum corner, not their centre**, so the occupied volume is an exact
+  integer box and rotation never introduces a half-stud.
+- **Placement is column-drop, not face-normal.** The ghost lands on the highest thing under its
+  footprint rather than attaching to the face you pointed at. Much more forgiving, and it is what
+  makes the five-minute-flower test survive contact with a trackpad.
+- **One `InstancedMesh` per part with per-instance colour**, rather than per part × colour. Keeps
+  the scene at ~16 draw calls instead of up to 192.
+- **Hover highlight is a separate outline mesh**, not an instance tint, so moving the pointer
+  never rewrites the instance buffers.
+- **`@cloudflare/workers-types` pinned to v5** to match the installed `workerd`. `y-partyserver`'s
+  `^4` peer range is stale; the resulting install warning is expected and documented in CLAUDE.md.
+- **TypeScript held at 5.9** rather than the newly released 7.0 — the Go port's ecosystem support
+  (typescript-eslint, Next) is still settling and this was not the place to debug it.
+
+**Not done / deferred.** The 3D scene itself has not been verified in a browser by the agent —
+build, typecheck, lint, unit tests and the networked sync check all pass, but visual and
+interaction behaviour needs the manual test script in the handover.
+
+**Next.** Await feedback on the manual test pass, then Phase 2 (gifting, accounts, deploy),
+starting with the concurrent-collision resolver noted above.
