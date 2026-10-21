@@ -20,9 +20,9 @@ const SYNC_TIMEOUT_MS = 15_000;
 /** Must exceed the server's onSave debounceWait so the snapshot is actually on disk. */
 const SAVE_GRACE_MS = 4_000;
 
-function connect(label) {
+function connect(label, room = ROOM) {
   const doc = new Y.Doc();
-  const provider = new YProvider(HOST, ROOM, doc, {
+  const provider = new YProvider(HOST, room, doc, {
     party: PARTY,
     // Without this, two docs in one process sync via BroadcastChannel and the test would pass
     // even with the server switched off.
@@ -165,6 +165,28 @@ async function main() {
   check("the deleted brick stays deleted", readBrick(carol.doc, "brick-1") === null);
   check("brick count is correct after reload", carol.doc.getMap("bricks").size === 1);
   carol.provider.destroy();
+
+  console.log("\n5. concurrent overlapping placement converges");
+  // A second room, so the earlier bricks are out of the way.
+  const roomB = `${ROOM}-conflict`;
+  const dora = connect("dora", roomB);
+  const evan = connect("evan", roomB);
+  await Promise.all([waitForSync(dora), waitForSync(evan)]);
+
+  // Both place in the same cell before either can have seen the other.
+  placeBrick(dora.doc, "aaa-dora", { ...BRICK, x: 3, z: 3 });
+  placeBrick(evan.doc, "zzz-evan", { ...BRICK, x: 3, z: 3 });
+
+  // Give the updates time to cross and both clients' resolvers time to run.
+  await sleep(2_000);
+
+  const doraIds = [...dora.doc.getMap("bricks").keys()].sort();
+  const evanIds = [...evan.doc.getMap("bricks").keys()].sort();
+  check("both clients agree on what survived", JSON.stringify(doraIds) === JSON.stringify(evanIds));
+  check("exactly one brick survives the clash", doraIds.length === 1);
+  check("the lower id is the one kept", doraIds[0] === "aaa-dora");
+  dora.provider.destroy();
+  evan.provider.destroy();
 
   console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);

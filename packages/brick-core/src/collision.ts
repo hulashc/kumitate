@@ -13,6 +13,7 @@ import {
   BASEPLATE_SIZE,
   cellKey,
   columnKey,
+  containsCell,
   footprintCells,
   isWithinBaseplate,
   occupiedCells,
@@ -93,8 +94,15 @@ export class Occupancy {
 
     for (const [x, y, z] of occupiedCells(placement)) {
       const key = cellKey(x, y, z);
-      // Only clear the cell if we still own it — a later overlapping add may have taken it.
-      if (this.#cells.get(key) === id) this.#cells.delete(key);
+      // Only touch the cell if we still own it — a later overlapping add may have taken it.
+      if (this.#cells.get(key) !== id) continue;
+
+      // Hand the cell back to any other brick still overlapping it rather than clearing it.
+      // Overlaps are transient (the resolver removes the loser), but between the merge and the
+      // cleanup the index must not claim an occupied cell is free.
+      const successor = this.#occupantOf(x, y, z, id);
+      if (successor !== undefined) this.#cells.set(key, successor);
+      else this.#cells.delete(key);
     }
     for (const [x, z] of footprintCells(placement)) {
       const key = columnKey(x, z);
@@ -173,6 +181,24 @@ export class Occupancy {
   /** `placement` dropped to its resting level. */
   drop(placement: Placement, ignoreId?: string): Placement {
     return { ...placement, y: this.restingY(placement, ignoreId) };
+  }
+
+  /**
+   * Any brick other than `exclude` whose volume covers this cell.
+   *
+   * Scans only the bricks registered in that stud column, which is a handful even in a tall
+   * build, so this stays cheap enough to run per cell during a removal.
+   */
+  #occupantOf(x: number, y: number, z: number, exclude: string): string | undefined {
+    const column = this.#columns.get(columnKey(x, z));
+    if (!column) return undefined;
+
+    for (const id of column) {
+      if (id === exclude) continue;
+      const placement = this.#placements.get(id);
+      if (placement && containsCell(placement, x, y, z)) return id;
+    }
+    return undefined;
   }
 
   /** Build an index from stored placements. */

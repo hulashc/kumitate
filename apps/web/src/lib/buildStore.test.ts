@@ -188,6 +188,134 @@ describe("BuildStore across two clients", () => {
   });
 });
 
+describe("concurrent collision resolution", () => {
+  let docA: Y.Doc;
+  let docB: Y.Doc;
+  let alice: BuildStore;
+  let bob: BuildStore;
+  /** Set true to hold updates back, simulating two people placing in the same instant. */
+  let partitioned = false;
+  let queued: { from: Y.Doc; update: Uint8Array }[] = [];
+
+  /**
+   * A relay that can be cut, so the two clients genuinely diverge before merging — a conflict
+   * that only appears after the merge is the whole scenario under test, and it cannot be staged
+   * with an always-connected pair.
+   */
+  function link(a: Y.Doc, b: Y.Doc): void {
+    const forward = (from: Y.Doc, to: Y.Doc) => (update: Uint8Array, origin: unknown) => {
+      if (origin === "remote") return;
+      if (partitioned) queued.push({ from, update });
+      else Y.applyUpdate(to, update, "remote");
+    };
+    a.on("update", forward(a, b));
+    b.on("update", forward(b, a));
+  }
+
+  function heal(): void {
+    partitioned = false;
+    for (const { from, update } of queued) {
+      Y.applyUpdate(from === docA ? docB : docA, update, "remote");
+    }
+    queued = [];
+  }
+
+  /** Let the resolver's queued microtask run. */
+  const settle = () => Promise.resolve();
+
+  beforeEach(() => {
+    partitioned = false;
+    queued = [];
+    docA = new Y.Doc();
+    docB = new Y.Doc();
+    link(docA, docB);
+    alice = new BuildStore(docA);
+    bob = new BuildStore(docB);
+  });
+
+  it("keeps both clients identical after a simultaneous overlapping placement", async () => {
+    partitioned = true;
+    alice.addBrick(brick("aaa", "alice", { x: 4, z: 4 }));
+    bob.addBrick(brick("bbb", "bob", { x: 4, z: 4 }));
+    heal();
+    await settle();
+
+    expect(alice.count).toBe(1);
+    expect(bob.count).toBe(1);
+    expect(alice.getSnapshot().map((b) => b.id)).toEqual(bob.getSnapshot().map((b) => b.id));
+    // Lowest id survives.
+    expect(alice.getBrick("aaa")).toBeDefined();
+    expect(alice.getBrick("bbb")).toBeUndefined();
+  });
+
+  it("converges whichever client resolves first", async () => {
+    partitioned = true;
+    bob.addBrick(brick("zzz", "bob", { x: 0, z: 0 }));
+    alice.addBrick(brick("mmm", "alice", { x: 0, z: 0 }));
+    heal();
+    await settle();
+
+    expect(alice.getSnapshot()).toEqual(bob.getSnapshot());
+    expect(alice.getBrick("mmm")).toBeDefined();
+  });
+
+  it("leaves non-overlapping concurrent placements alone", async () => {
+    partitioned = true;
+    alice.addBrick(brick("aaa", "alice", { x: 0, z: 0 }));
+    bob.addBrick(brick("bbb", "bob", { x: 10, z: 10 }));
+    heal();
+    await settle();
+
+    expect(alice.count).toBe(2);
+    expect(bob.count).toBe(2);
+  });
+
+  it("tells the loser's client what was removed", async () => {
+    const seen: string[] = [];
+    bob.onConflictResolved((losers) => seen.push(...losers.map((l) => l.id)));
+
+    partitioned = true;
+    alice.addBrick(brick("aaa", "alice", { x: 2, z: 2 }));
+    bob.addBrick(brick("bbb", "bob", { x: 2, z: 2 }));
+    heal();
+    await settle();
+
+    expect(seen).toEqual(["bbb"]);
+  });
+
+  it("leaves the occupancy index consistent after resolving", async () => {
+    partitioned = true;
+    alice.addBrick(brick("aaa", "alice", { x: 4, z: 4 }));
+    bob.addBrick(brick("bbb", "bob", { x: 4, z: 4 }));
+    heal();
+    await settle();
+
+    expect(alice.occupancy.size).toBe(1);
+    expect(alice.occupancy.at(4, 0, 4)).toBe("aaa");
+    expect(bob.occupancy.at(4, 0, 4)).toBe("aaa");
+  });
+
+  it("does not add the resolver's cleanup to the undo stack", async () => {
+    partitioned = true;
+    alice.addBrick(brick("aaa", "alice", { x: 4, z: 4 }));
+    bob.addBrick(brick("bbb", "bob", { x: 4, z: 4 }));
+    heal();
+    await settle();
+
+    // Bob lost his brick to the resolver. Undo must not resurrect it into occupied space.
+    bob.undo();
+    await settle();
+    expect(bob.getBrick("bbb")).toBeUndefined();
+    expect(bob.getSnapshot()).toEqual(alice.getSnapshot());
+  });
+
+  it("does nothing when there is no conflict to resolve", () => {
+    alice.addBrick(brick("aaa", "alice"));
+    expect(alice.resolveNow()).toEqual([]);
+    expect(alice.count).toBe(1);
+  });
+});
+
 describe("catalogue assumptions the store relies on", () => {
   it("resolves the default part used by placement", () => {
     expect(getPart("3001")).toBeDefined();

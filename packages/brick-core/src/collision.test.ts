@@ -226,16 +226,65 @@ describe("canPlace", () => {
 });
 
 describe("index integrity under overlapping writes", () => {
-  it("keeps the surviving brick's cells after an overlapping add is removed", () => {
+  /**
+   * The merge resolver indexes overlapping bricks for a moment before removing the loser. During
+   * that window — and crucially, after the removal — every query has to stay truthful. An
+   * earlier version of this suite only checked `size` and `columnTop` here, and missed that
+   * removing the overlapping brick was clearing cells the survivor still occupied.
+   */
+  it("hands the cells back to the survivor when an overlapping brick is removed", () => {
     const occ = new Occupancy();
     occ.add("a", at(BRICK_2X4, 0, 0, 0));
-    // Deliberately index an overlapping brick, as a Phase 2 merge resolver might have to.
     occ.add("b", at(BRICK_2X4, 0, 0, 0));
     expect(occ.at(0, 0, 0)).toBe("b");
 
     occ.remove("b");
-    // "a" is still indexed and must not have been collaterally erased from the column index.
     expect(occ.size).toBe(1);
     expect(occ.columnTop(0, 0)).toBe(3);
+    // Every one of "a"'s cells must still report "a".
+    expect(occ.at(0, 0, 0)).toBe("a");
+    expect(occ.at(1, 2, 3)).toBe("a");
+    expect(occ.collides(at(BRICK_2X4, 0, 0, 0))).toBe(true);
+  });
+
+  it("keeps a partial overlap truthful after the newer brick goes", () => {
+    const occ = new Occupancy();
+    occ.add("a", at(BRICK_2X4, 0, 0, 0)); // x 0-1, z 0-3
+    occ.add("b", at(BRICK_2X4, 1, 0, 1)); // x 1-2, z 1-4, overlaps a in x1 z1-3
+    occ.remove("b");
+
+    expect(occ.at(1, 0, 1)).toBe("a"); // shared cell returns to "a"
+    expect(occ.at(2, 0, 4)).toBeUndefined(); // cell only "b" had is now free
+    expect(occ.at(0, 0, 0)).toBe("a");
+  });
+
+  it("clears the cell when the removed brick was the only occupant", () => {
+    const occ = new Occupancy();
+    occ.add("a", at(BRICK_1X1, 5, 0, 5));
+    occ.remove("a");
+    expect(occ.at(5, 0, 5)).toBeUndefined();
+    expect(occ.columnTop(5, 5)).toBe(0);
+  });
+
+  it("survives removing bricks from a three-deep pile in any order", () => {
+    for (const order of [
+      ["a", "b", "c"],
+      ["c", "b", "a"],
+      ["b", "a", "c"],
+    ]) {
+      const occ = new Occupancy();
+      occ.add("a", at(BRICK_2X4, 0, 0, 0));
+      occ.add("b", at(BRICK_2X4, 0, 0, 0));
+      occ.add("c", at(BRICK_2X4, 0, 0, 0));
+
+      const [first, second] = order as [string, string, string];
+      occ.remove(first);
+      occ.remove(second);
+
+      const survivor = order[2]!;
+      expect(occ.size).toBe(1);
+      expect(occ.at(0, 0, 0)).toBe(survivor);
+      expect(occ.at(1, 2, 3)).toBe(survivor);
+    }
   });
 });

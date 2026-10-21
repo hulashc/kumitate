@@ -6,6 +6,7 @@ import { BuildScene } from "./BuildScene";
 import { RoomBar } from "./RoomBar";
 import { Toolbar } from "./Toolbar";
 import { PeerGhosts } from "./PeerGhosts";
+import { Toast } from "./Toast";
 import type { GhostState } from "./GhostBrick";
 import { useRoom } from "@/lib/useRoom";
 import { useBricks, useBuildMeta } from "@/lib/useBuildStore";
@@ -42,6 +43,22 @@ export function Builder({ roomId }: { roomId: string }) {
   const rotate = useUiStore((s) => s.rotate);
 
   useLocalPresence(provider, identity);
+
+  // A brick silently vanishing is alarming; say why.
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (!store || !room) return;
+    return store.onConflictResolved((losers) => {
+      const mine = losers.filter((loser) => loser.by === room.clientId).length;
+      if (mine === 0) return;
+      setToast(
+        mine === 1
+          ? "Someone placed a brick there at the same moment — yours was removed."
+          : `${mine} of your bricks clashed with someone else's and were removed.`,
+      );
+      setTimeout(() => setToast(null), 4000);
+    });
+  }, [store, room]);
 
   const renameIdentity = useCallback(
     (name: string) => {
@@ -154,6 +171,8 @@ export function Builder({ roomId }: { roomId: string }) {
           onRetitle={(title) => store.setMeta({ title })}
         />
       )}
+
+      {toast && <Toast message={toast} />}
 
       <Toolbar
         brickCount={bricks.length}

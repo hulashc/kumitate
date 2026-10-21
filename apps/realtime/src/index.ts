@@ -9,6 +9,11 @@
 import * as Y from "yjs";
 import { routePartykitRequest } from "partyserver";
 import { YServer } from "y-partyserver";
+// Imported by subpath, not through the barrel: the barrel re-exports the zod schema, which
+// would drag zod into the Worker bundle for no reason (it tripled the upload size).
+import { getPart } from "@kumitate/brick-core/parts";
+import { resolveConflicts } from "@kumitate/brick-core/resolve";
+import type { Placement, Rotation } from "@kumitate/brick-core/grid";
 
 export type Env = {
   BuildRoom: DurableObjectNamespace;
@@ -31,6 +36,42 @@ function toUint8Array(value: unknown): Uint8Array | null {
   return null;
 }
 
+/** Origin tag for the server's own writes, so they are distinguishable in logs. */
+const RESOLVER_ORIGIN = "kumitate.server-resolver";
+
+function isRotation(value: unknown): value is Rotation {
+  return value === 0 || value === 1 || value === 2 || value === 3;
+}
+
+/**
+ * Read the document's bricks as placements, skipping anything malformed or using a part this
+ * build of the catalogue does not know. A footprint we cannot agree on must never decide a
+ * conflict.
+ */
+function readPlacements(doc: Y.Doc): [string, Placement][] {
+  const out: [string, Placement][] = [];
+
+  for (const [id, value] of doc.getMap("bricks").entries()) {
+    if (!(value instanceof Y.Map)) continue;
+    const partId = value.get("part");
+    const x = value.get("x");
+    const y = value.get("y");
+    const z = value.get("z");
+    const rot = value.get("rot");
+
+    if (typeof partId !== "string") continue;
+    if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) continue;
+    if (!isRotation(rot)) continue;
+
+    const part = getPart(partId);
+    if (!part) continue;
+
+    out.push([id, { part, x: x as number, y: y as number, z: z as number, rot }]);
+  }
+
+  return out;
+}
+
 export class BuildRoom extends YServer<Env> {
   /**
    * How aggressively the document is flushed to storage.
@@ -44,8 +85,56 @@ export class BuildRoom extends YServer<Env> {
     timeout: 10_000,
   };
 
+  #resolveScheduled = false;
+  #resolverAttached = false;
+
+  /**
+   * Resolve overlapping bricks authoritatively.
+   *
+   * Clients run the same pure function for instant feedback, but the server running it too is
+   * what makes the guarantee hold: a client that is old, paused, or simply not implementing the
+   * resolver can no longer leave a room permanently inconsistent. Both sides reach the same
+   * answer by construction, so the duplicated deletes are harmless.
+   */
+  #resolveConflicts(): void {
+    const losers = resolveConflicts(readPlacements(this.document));
+    if (losers.length === 0) return;
+
+    const bricks = this.document.getMap("bricks");
+    this.document.transact(() => {
+      for (const loser of losers) bricks.delete(loser.id);
+    }, RESOLVER_ORIGIN);
+
+    console.log(`room ${this.name}: resolved ${losers.length} overlapping brick(s)`);
+  }
+
+  /** Coalesce a burst of updates into one resolve pass, off the current transaction. */
+  #scheduleResolve(): void {
+    if (this.#resolveScheduled) return;
+    this.#resolveScheduled = true;
+    queueMicrotask(() => {
+      this.#resolveScheduled = false;
+      try {
+        this.#resolveConflicts();
+      } catch (error) {
+        // A failed resolve must never take the room down with it.
+        console.error(`room ${this.name}: resolver failed`, error);
+      }
+    });
+  }
+
+  /** Watch the document for overlaps. Attached before the snapshot loads, so a stored conflict
+   * is cleaned up too. */
+  #attachResolver(): void {
+    if (this.#resolverAttached) return;
+    this.#resolverAttached = true;
+    this.document.getMap("bricks").observeDeep(() => this.#scheduleResolve());
+  }
+
   /** Restore the stored document. Called once, when the first client connects. */
   override async onLoad(): Promise<void> {
+    this.#attachResolver();
+
     const count = await this.ctx.storage.get<number>(CHUNK_COUNT_KEY);
     if (typeof count !== "number" || count <= 0) return;
 

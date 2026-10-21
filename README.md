@@ -105,10 +105,11 @@ refresh or a rejoin finds the build still there.
 
 ## Known limitations in Phase 1
 
-- **Simultaneous overlapping placement.** Collision is checked when you place a brick, against
-  what your client knows at that moment. If two people place overlapping bricks in the same
-  instant, both land. Phase 2 adds a deterministic post-merge resolver. This is called out in
-  `PLAN.md` section 6 as an accepted soft-start trade-off.
+- **A simultaneous placement can be taken back off you.** If two people place overlapping bricks
+  in the same instant, both land in the CRDT and the resolver then removes one — lowest brick id
+  wins. The losing client gets a short explanation rather than a brick silently vanishing. The
+  resolver runs on both the client (for instant feedback) and the server (authoritatively), and
+  is a pure function of the merged document, so everyone reaches the same answer.
 - **Undo can leave a floater.** Undoing a brick that someone else has since built on top of
   removes only yours; the brick above stays where it was.
 - **Slope collision is a box.** The 45° slope occupies its full bounding box, so you cannot tuck

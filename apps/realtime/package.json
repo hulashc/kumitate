@@ -12,6 +12,7 @@
     "test": "echo \"no tests in @kumitate/realtime\" && exit 0"
   },
   "dependencies": {
+    "@kumitate/brick-core": "workspace:*",
     "partyserver": "^0.5.10",
     "y-partyserver": "^2.2.0",
     "yjs": "^13.6.33"

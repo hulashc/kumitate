@@ -19,8 +19,11 @@ import {
   BASEPLATE_SIZE,
   Occupancy,
   type Brick,
+  type ConflictLoser,
+  type Placement,
   type Rotation,
   getPart,
+  resolveConflicts,
   toPlacement,
 } from "@kumitate/brick-core";
 
@@ -34,6 +37,15 @@ export const META_KEY = "meta";
  * undoes my own bricks" — remote updates arrive under a different origin and are never tracked.
  */
 export const LOCAL_ORIGIN = Symbol("kumitate.local");
+
+/**
+ * Origin for the collision resolver's own deletions.
+ *
+ * Deliberately *not* tracked by the UndoManager: the resolver is tidying up after the CRDT, not
+ * performing a user action, and Ctrl+Z should never resurrect a brick into a space that is
+ * already taken.
+ */
+export const RESOLVER_ORIGIN = Symbol("kumitate.resolver");
 
 export type BuildMetaState = {
   title: string;
@@ -99,6 +111,11 @@ function writeBrick(brick: Brick): Y.Map<unknown> {
 
 type Listener = () => void;
 
+/** A removed brick, plus who had placed it — so a client can tell if it lost one of its own. */
+export type ResolvedConflict = ConflictLoser & { by: string };
+
+type ConflictListener = (losers: ResolvedConflict[]) => void;
+
 /**
  * Observable view over a build document.
  *
@@ -112,6 +129,11 @@ export class BuildStore {
   readonly #bricks = new Map<string, Brick>();
   readonly #occupancy = new Occupancy();
   readonly #listeners = new Set<Listener>();
+  readonly #conflictListeners = new Set<ConflictListener>();
+
+  /** Set when an incoming change landed on top of an existing brick, arming the resolver. */
+  #conflictSuspected = false;
+  #resolveScheduled = false;
 
   #snapshot: Brick[] = [];
   #snapshotDirty = true;
@@ -154,6 +176,7 @@ export class BuildStore {
     metaMap(this.doc).unobserve(this.#onMetaChanged);
     this.undoManager.destroy();
     this.#listeners.clear();
+    this.#conflictListeners.clear();
   }
 
   // ---- React integration -------------------------------------------------
@@ -305,6 +328,67 @@ export class BuildStore {
       this.#snapshotDirty = true;
       this.#emit();
     }
+
+    if (this.#conflictSuspected) this.#scheduleResolve();
+  }
+
+  /**
+   * Run the resolver on a microtask rather than inline.
+   *
+   * We are inside a Yjs observer here, and the resolver writes back to the same map. Deferring
+   * keeps that write out of the transaction currently being delivered, and coalesces a burst of
+   * incoming updates into a single resolve pass.
+   */
+  #scheduleResolve(): void {
+    if (this.#resolveScheduled || this.#disposed) return;
+    this.#resolveScheduled = true;
+    queueMicrotask(() => {
+      this.#resolveScheduled = false;
+      if (!this.#disposed) this.resolveNow();
+    });
+  }
+
+  /**
+   * Remove every brick that lost a collision, and report what went.
+   *
+   * Every client runs this independently and reaches the same answer, because
+   * {@link resolveConflicts} depends only on the merged document. The redundant deletes that
+   * results are harmless — deleting an already-deleted key is a no-op in Yjs — and that is a far
+   * simpler guarantee than electing one client to do the tidying.
+   */
+  resolveNow(): ResolvedConflict[] {
+    this.#conflictSuspected = false;
+
+    const entries: [string, Placement][] = [];
+    for (const [id, brick] of this.#bricks) {
+      const part = getPart(brick.part);
+      // Unknown parts are excluded for the same reason they are kept out of the index: we cannot
+      // agree on a footprint we do not have, so we must not let one decide a conflict.
+      if (part) entries.push([id, toPlacement(brick, part)]);
+    }
+
+    const losers: ResolvedConflict[] = resolveConflicts(entries).map((loser) => ({
+      ...loser,
+      // Read the author before the delete, or there is nothing left to attribute.
+      by: this.#bricks.get(loser.id)?.by ?? "",
+    }));
+    if (losers.length === 0) return losers;
+
+    const bricks = bricksMap(this.doc);
+    this.doc.transact(() => {
+      for (const loser of losers) bricks.delete(loser.id);
+    }, RESOLVER_ORIGIN);
+
+    for (const listener of this.#conflictListeners) listener(losers);
+    return losers;
+  }
+
+  /** Notified whenever the resolver removes bricks. */
+  onConflictResolved(listener: ConflictListener): () => void {
+    this.#conflictListeners.add(listener);
+    return () => {
+      this.#conflictListeners.delete(listener);
+    };
   }
 
   #upsert(id: string, entry: Y.Map<unknown>): void {
@@ -317,10 +401,16 @@ export class BuildStore {
     this.#bricks.set(id, brick);
 
     const part = getPart(brick.part);
-    if (part) this.#occupancy.add(id, toPlacement(brick, part));
-    // An unknown part is still rendered (with a fallback mesh) but is left out of the index —
-    // guessing its footprint would make collision answers differ between clients.
-    else this.#occupancy.remove(id);
+    if (part) {
+      const placement = toPlacement(brick, part);
+      // Cheap pre-check: only an actual overlap is worth paying for a full resolve pass.
+      if (this.#occupancy.collides(placement, id)) this.#conflictSuspected = true;
+      this.#occupancy.add(id, placement);
+    } else {
+      // An unknown part is still rendered (with a fallback mesh) but is left out of the index —
+      // guessing its footprint would make collision answers differ between clients.
+      this.#occupancy.remove(id);
+    }
 
     this.#snapshotDirty = true;
   }

@@ -149,7 +149,7 @@ Goal: two browser windows on one machine, building together in the same scene.
 - [ ] Templates: flower stem, heart, card frame
 - [ ] Gift flow: snapshot build + letter → share link
 - [ ] Reveal page (no account needed): bricks assemble in placement order, then the letter
-- [ ] Concurrent-collision resolver
+- [x] Concurrent-collision resolver
 - [ ] Deploy web to Vercel, realtime to Cloudflare
 
 ### Phase 3 — Real parts: catalogue pipeline + parts list

@@ -152,6 +152,19 @@ export function topOf(placement: Placement): number {
   return placement.y + placement.part.height;
 }
 
+/** True if a placement's volume contains the cell `(x, y, z)`. */
+export function containsCell(placement: Placement, x: number, y: number, z: number): boolean {
+  const { width, depth } = rotatedFootprint(placement.part, placement.rot);
+  return (
+    x >= placement.x &&
+    x < placement.x + width &&
+    z >= placement.z &&
+    z < placement.z + depth &&
+    y >= placement.y &&
+    y < placement.y + placement.part.height
+  );
+}
+
 /** Key for a single `(x, y, z)` cell. */
 export function cellKey(x: number, y: number, z: number): string {
   return `${x},${y},${z}`;
