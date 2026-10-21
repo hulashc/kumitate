@@ -2,7 +2,8 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    # Both, so the deploy does not silently never run on a repo that uses either name.
+    branches: [main, master]
   # Lets you redeploy by hand after changing the realtime host variable.
   workflow_dispatch:
 
