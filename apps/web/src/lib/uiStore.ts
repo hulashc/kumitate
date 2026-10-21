@@ -20,18 +20,28 @@ export type UiState = {
   part: PartId;
   color: ColorCode;
   rot: Rotation;
+  /**
+   * Template armed for stamping, or null for ordinary brick placement.
+   *
+   * Picking a part cancels it — the two are the same gesture (click in the scene) and arming
+   * both at once would be ambiguous.
+   */
+  template: string | null;
   setPart: (part: PartId) => void;
   setColor: (color: ColorCode) => void;
   setRot: (rot: Rotation) => void;
   rotate: () => void;
+  setTemplate: (template: string | null) => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
   part: DEFAULT_PART,
   color: DEFAULT_COLOR,
   rot: 0,
-  setPart: (part) => set({ part }),
+  template: null,
+  setPart: (part) => set({ part, template: null }),
   setColor: (color) => set({ color }),
   setRot: (rot) => set({ rot }),
   rotate: () => set((state) => ({ rot: nextRotation(state.rot) })),
+  setTemplate: (template) => set({ template }),
 }));

@@ -234,6 +234,19 @@ export class BuildStore {
     }, LOCAL_ORIGIN);
   }
 
+  /**
+   * Add several bricks as one undoable step.
+   *
+   * Stamping a template should be a single Ctrl+Z, not ten.
+   */
+  addBricks(bricks: readonly Brick[]): void {
+    if (bricks.length === 0) return;
+    this.doc.transact(() => {
+      const map = bricksMap(this.doc);
+      for (const brick of bricks) map.set(brick.id, writeBrick(brick));
+    }, LOCAL_ORIGIN);
+  }
+
   /** Remove a brick. Returns false if it was already gone. */
   removeBrick(id: string): boolean {
     const bricks = bricksMap(this.doc);

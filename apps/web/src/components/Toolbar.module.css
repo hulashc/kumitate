@@ -115,6 +115,12 @@
   cursor: default;
 }
 
+.actionActive {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel-raised));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
 .action kbd {
   padding: 0.05rem 0.3rem;
   border: 1px solid var(--border);

@@ -41,6 +41,7 @@ export function Builder({ roomId }: { roomId: string }) {
   const { canUndo, canRedo } = useUndoState(store);
   const peers = usePeers(provider);
   const rotate = useUiStore((s) => s.rotate);
+  const setTemplate = useUiStore((s) => s.setTemplate);
 
   useLocalPresence(provider, identity);
 
@@ -103,6 +104,11 @@ export function Builder({ roomId }: { roomId: string }) {
 
       if (mod) return;
 
+      if (event.key === "Escape") {
+        setTemplate(null);
+        return;
+      }
+
       if (event.key.toLowerCase() === "r") {
         event.preventDefault();
         rotate();
@@ -121,7 +127,7 @@ export function Builder({ roomId }: { roomId: string }) {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [store, rotate]);
+  }, [store, rotate, setTemplate]);
 
   const baseplateSize = meta.baseplate;
 

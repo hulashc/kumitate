@@ -2,6 +2,7 @@
 
 import {
   PALETTE,
+  TEMPLATES,
   getColorOrDefault,
   partsByCategory,
   type PartId,
@@ -34,9 +35,11 @@ export function Toolbar({
   const part = useUiStore((s) => s.part);
   const color = useUiStore((s) => s.color);
   const rot = useUiStore((s) => s.rot);
+  const template = useUiStore((s) => s.template);
   const setPart = useUiStore((s) => s.setPart);
   const setColor = useUiStore((s) => s.setColor);
   const rotate = useUiStore((s) => s.rotate);
+  const setTemplate = useUiStore((s) => s.setTemplate);
 
   const swatch = getColorOrDefault(color).hex;
   const groups = partsByCategory();
@@ -52,7 +55,9 @@ export function Toolbar({
                 <button
                   key={p.id}
                   type="button"
-                  className={p.id === part ? `${styles.part} ${styles.partActive}` : styles.part}
+                  className={
+                    p.id === part && !template ? `${styles.part} ${styles.partActive}` : styles.part
+                  }
                   onClick={() => setPart(p.id as PartId)}
                   title={`${p.name} (${p.id})`}
                   aria-label={p.name}
@@ -67,6 +72,26 @@ export function Toolbar({
       </div>
 
       <div className={styles.right}>
+        <div className={styles.group}>
+          <span className={styles.groupLabel}>Templates</span>
+          <div className={styles.groupItems}>
+            {TEMPLATES.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={
+                  t.id === template ? `${styles.action} ${styles.actionActive}` : styles.action
+                }
+                onClick={() => setTemplate(t.id === template ? null : t.id)}
+                title={`${t.description} — click in the scene to place it`}
+                aria-pressed={t.id === template}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className={styles.group}>
           <span className={styles.groupLabel}>Colour</span>
           <div className={styles.swatches}>

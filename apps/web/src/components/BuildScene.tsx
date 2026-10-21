@@ -6,10 +6,17 @@ import type { ThreeEvent } from "@react-three/fiber";
 import { nanoid } from "nanoid";
 import {
   canPlace,
+  canPlaceTemplate,
   centerOnCell,
+  centerTemplateOnCell,
+  clampTemplateToBaseplate,
   clampToBaseplate,
   getPartOrDefault,
+  getTemplate,
+  placeTemplate,
+  templateRestingY,
   type Brick,
+  type PlacedTemplateBrick,
 } from "@kumitate/brick-core";
 import type { BuildStore } from "@/lib/buildStore";
 import { useUiStore } from "@/lib/uiStore";
@@ -18,6 +25,7 @@ import { Baseplate } from "./Baseplate";
 import { BrickInstances, brickIdFromHit } from "./BrickInstances";
 import { GhostBrick, type GhostState } from "./GhostBrick";
 import { HoverOutline } from "./HoverOutline";
+import { TemplateGhost } from "./TemplateGhost";
 
 /**
  * Pointer travel, in CSS pixels, above which a press-and-release counts as a camera drag rather
@@ -47,11 +55,18 @@ export function BuildScene({
   const part = useUiStore((s) => s.part);
   const color = useUiStore((s) => s.color);
   const rot = useUiStore((s) => s.rot);
+  const templateId = useUiStore((s) => s.template);
+  const setTemplate = useUiStore((s) => s.setTemplate);
 
   const [ghost, setGhost] = useState<GhostState | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
+  const [templateGhost, setTemplateGhost] = useState<{
+    bricks: PlacedTemplateBrick[];
+    valid: boolean;
+  } | null>(null);
 
   const ghostRef = useRef<GhostState | null>(null);
+  const templateGhostRef = useRef<typeof templateGhost>(null);
   const lastCellRef = useRef<{ x: number; z: number } | null>(null);
   const pressRef = useRef<{ x: number; y: number; button: number } | null>(null);
 
@@ -93,12 +108,44 @@ export function BuildScene({
     [selectedPart, rot, color, baseplateSize, store],
   );
 
+  /**
+   * Work out where an armed template would land: centred on the cell, slid onto the plate, then
+   * dropped as one rigid piece.
+   */
+  const computeTemplateGhost = useCallback(
+    (cellX: number, cellZ: number) => {
+      const template = templateId ? getTemplate(templateId) : undefined;
+      if (!template) return null;
+
+      const centred = centerTemplateOnCell(template, cellX, cellZ);
+      const { x, z } = clampTemplateToBaseplate(template, centred.x, centred.z, baseplateSize);
+      const y = templateRestingY(template, store.occupancy, x, z);
+      const bricks = placeTemplate(template, x, y, z);
+
+      return { bricks, valid: canPlaceTemplate(bricks, store.occupancy, baseplateSize) };
+    },
+    [templateId, baseplateSize, store],
+  );
+
+  const publishTemplateGhost = useCallback((next: typeof templateGhost) => {
+    templateGhostRef.current = next;
+    setTemplateGhost(next);
+  }, []);
+
   /** Re-run the ghost calculation for the last known cell — after a placement or a rotation. */
   const refreshGhost = useCallback(() => {
     const cell = lastCellRef.current;
     if (!cell) return;
+
+    if (templateId) {
+      publishTemplateGhost(computeTemplateGhost(cell.x, cell.z));
+      publishGhost(null);
+      return;
+    }
+
+    publishTemplateGhost(null);
     publishGhost(computeGhost(cell.x, cell.z));
-  }, [computeGhost, publishGhost]);
+  }, [templateId, computeGhost, computeTemplateGhost, publishGhost, publishTemplateGhost]);
 
   /**
    * Keep the ghost honest when something other than the pointer changes it: picking a new part
@@ -125,9 +172,9 @@ export function BuildScene({
         setHovered(overBrick);
       }
 
-      if (cellChanged) publishGhost(computeGhost(cell.x, cell.z));
+      if (cellChanged) refreshGhost();
     },
-    [baseplateSize, computeGhost, hoveredRef, publishGhost],
+    [baseplateSize, hoveredRef, refreshGhost],
   );
 
   const handlePointerDown = useCallback((event: ThreeEvent<PointerEvent>) => {
@@ -139,6 +186,27 @@ export function BuildScene({
   }, []);
 
   const placeBrick = useCallback(() => {
+    // An armed template takes the click instead of a single brick.
+    const template = templateGhostRef.current;
+    if (template) {
+      if (!template.valid) return;
+      store.addBricks(
+        template.bricks.map((brick) => ({
+          id: nanoid(10),
+          part: brick.part.id,
+          color: brick.color,
+          x: brick.x,
+          y: brick.y,
+          z: brick.z,
+          rot: brick.rot,
+          by: clientId,
+        })),
+      );
+      // One stamp per click: disarm so the next click is an ordinary brick again.
+      setTemplate(null);
+      return;
+    }
+
     const current = ghostRef.current;
     if (!current || !current.valid) return;
 
@@ -155,7 +223,7 @@ export function BuildScene({
 
     // The column just got taller, so the ghost has to climb even if the pointer has not moved.
     refreshGhost();
-  }, [store, clientId, refreshGhost]);
+  }, [store, clientId, refreshGhost, setTemplate]);
 
   const handlePointerUp = useCallback(
     (event: ThreeEvent<PointerEvent>) => {
@@ -231,8 +299,17 @@ export function BuildScene({
 
       <Baseplate size={baseplateSize} />
 
-      {ghost && <GhostBrick ghost={ghost} baseplateSize={baseplateSize} />}
-      {hoveredBrick && <HoverOutline brick={hoveredBrick} baseplateSize={baseplateSize} />}
+      {ghost && !templateGhost && <GhostBrick ghost={ghost} baseplateSize={baseplateSize} />}
+      {templateGhost && (
+        <TemplateGhost
+          bricks={templateGhost.bricks}
+          valid={templateGhost.valid}
+          baseplateSize={baseplateSize}
+        />
+      )}
+      {hoveredBrick && !templateGhost && (
+        <HoverOutline brick={hoveredBrick} baseplateSize={baseplateSize} />
+      )}
 
       <OrbitControls
         makeDefault
