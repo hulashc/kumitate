@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { nanoid } from "nanoid";
+import { ROOM_PARAM, newRoomId } from "@/lib/useRoomId";
 import styles from "./StartBuildingButton.module.css";
 
 /**
@@ -22,7 +22,7 @@ export function StartBuildingButton() {
       disabled={busy}
       onClick={() => {
         setBusy(true);
-        router.push(`/build/${nanoid(10)}`);
+        router.push(`/build/?${ROOM_PARAM}=${newRoomId()}`);
       }}
     >
       {busy ? "Opening room…" : "Start building"}

@@ -13,6 +13,7 @@ import { useBricks, useBuildMeta } from "@/lib/useBuildStore";
 import { useUndoState } from "@/lib/useUndoState";
 import { usePeers, useLocalPresence, publishGhost } from "@/lib/useAwareness";
 import { loadIdentity, saveIdentity, type PresenceUser } from "@/lib/presence";
+import { isRealtimeMisconfigured } from "@/lib/config";
 import { useUiStore } from "@/lib/uiStore";
 import styles from "./Builder.module.css";
 
@@ -44,6 +45,11 @@ export function Builder({ roomId }: { roomId: string }) {
   const setTemplate = useUiStore((s) => s.setTemplate);
 
   useLocalPresence(provider, identity);
+
+  // Deployed but still pointing at localhost: say so, rather than letting every visitor
+  // wonder why nothing syncs.
+  const [misconfigured, setMisconfigured] = useState(false);
+  useEffect(() => setMisconfigured(isRealtimeMisconfigured()), []);
 
   // A brick silently vanishing is alarming; say why.
   const [toast, setToast] = useState<string | null>(null);
@@ -177,6 +183,10 @@ export function Builder({ roomId }: { roomId: string }) {
           onRenameIdentity={renameIdentity}
           onRetitle={(title) => store.setMeta({ title })}
         />
+      )}
+
+      {misconfigured && (
+        <Toast message="Multiplayer is not configured for this deployment — set NEXT_PUBLIC_REALTIME_HOST to your Cloudflare worker. You can still build on your own." />
       )}
 
       {toast && <Toast message={toast} />}

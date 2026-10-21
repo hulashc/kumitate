@@ -143,6 +143,32 @@
   font-size: 0.8rem;
 }
 
+.shareRow {
+  flex-basis: 100%;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.shareLabel {
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.shareInput {
+  flex: 1;
+  min-width: 0;
+  height: 2rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.45rem;
+  background: var(--panel-raised);
+  color: var(--fg);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.76rem;
+}
+
 .noticeOk,
 .noticeBad {
   flex-basis: 100%;

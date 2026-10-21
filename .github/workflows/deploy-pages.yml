@@ -1,0 +1,76 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Lets you redeploy by hand after changing the realtime host variable.
+  workflow_dispatch:
+
+# Needed by the Pages deploy action.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let an in-flight deploy finish rather than cancelling it half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Fail the deploy rather than publishing a broken build.
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      - name: Resolve base path
+        id: base
+        # A project site is served from /<repo>/, a user or custom-domain site from /.
+        # NEXT_PUBLIC_BASE_PATH can be set as a repo variable to override this.
+        run: |
+          if [ -n "${{ vars.NEXT_PUBLIC_BASE_PATH }}" ]; then
+            echo "path=${{ vars.NEXT_PUBLIC_BASE_PATH }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.repository.name }}" = "${{ github.repository_owner }}.github.io" ]; then
+            echo "path=" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=/${{ github.event.repository.name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build static site
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.base.outputs.path }}
+          # Set this as a repository variable to your deployed worker, e.g.
+          # kumitate-realtime.<your-subdomain>.workers.dev
+          # Host and port only, no scheme: the client picks ws:// or wss:// itself.
+          NEXT_PUBLIC_REALTIME_HOST: ${{ vars.NEXT_PUBLIC_REALTIME_HOST }}
+        run: pnpm --filter @kumitate/web build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

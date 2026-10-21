@@ -10,6 +10,8 @@ export default tseslint.config(
       "**/node_modules/**",
       "**/dist/**",
       "**/.next/**",
+      // The static export: generated bundles, not source.
+      "**/out/**",
       "**/.wrangler/**",
       "**/coverage/**",
       "**/worker-configuration.d.ts",

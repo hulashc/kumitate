@@ -53,7 +53,7 @@ export function RoomReveal({ roomId }: { roomId: string }) {
       bricks={snapshot ?? []}
       title={meta.title}
       baseplateSize={meta.baseplate}
-      backHref={`/build/${roomId}`}
+      backHref={`/build/?room=${encodeURIComponent(roomId)}`}
       backLabel="Back to the builder"
     />
   );

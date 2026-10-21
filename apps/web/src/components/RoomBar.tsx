@@ -6,6 +6,7 @@ import type { Peer, PresenceUser } from "@/lib/presence";
 import type { ConnectionStatus } from "@/lib/useRoom";
 import type { BuildStore } from "@/lib/buildStore";
 import { downloadBuild, importBuildFile } from "@/lib/buildFile";
+import { inviteUrl } from "@/lib/useRoomId";
 import styles from "./RoomBar.module.css";
 
 const STATUS_LABEL: Record<ConnectionStatus, string> = {
@@ -45,15 +46,18 @@ export function RoomBar({
   const [copied, setCopied] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null);
   const [editingName, setEditingName] = useState(false);
+  const [shareLink, setShareLink] = useState<string | null>(null);
 
   const copyInvite = async () => {
+    const link = inviteUrl(roomId);
     try {
-      await navigator.clipboard.writeText(window.location.href);
+      await navigator.clipboard.writeText(link);
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
-      // Clipboard access can be denied; the URL bar is still the fallback.
-      setNotice({ ok: false, message: "Could not copy — copy the address bar instead." });
+      // A cross-origin iframe without `allow="clipboard-write"` will refuse. Show the link so it
+      // can still be copied by hand — there is no address bar to fall back on when embedded.
+      setShareLink(link);
     }
   };
 
@@ -133,7 +137,7 @@ export function RoomBar({
           {copied ? "Link copied" : "Copy invite link"}
         </button>
 
-        <Link className={styles.button} href={`/build/${roomId}/reveal`}>
+        <Link className={styles.button} href={`/reveal/?room=${encodeURIComponent(roomId)}`}>
           Preview reveal
         </Link>
 
@@ -156,6 +160,25 @@ export function RoomBar({
           }}
         />
       </div>
+
+      {shareLink && (
+        <div className={styles.shareRow}>
+          <label className={styles.shareLabel} htmlFor="kumitate-share-link">
+            Copy this link:
+          </label>
+          <input
+            id="kumitate-share-link"
+            className={styles.shareInput}
+            value={shareLink}
+            readOnly
+            onFocus={(event) => event.currentTarget.select()}
+            autoFocus
+          />
+          <button type="button" className={styles.button} onClick={() => setShareLink(null)}>
+            Done
+          </button>
+        </div>
+      )}
 
       {notice && (
         <p className={notice.ok ? styles.noticeOk : styles.noticeBad} role="status">

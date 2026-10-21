@@ -8,66 +8,64 @@ This file is the source of truth for the project. Claude Code reads it at the st
 
 ## 1. Vision
 
-A browser-based 3D brick builder where two or more people build together in the same scene, in real time. It should be simpler than any existing brick CAD tool: someone who has never used 3D software should be able to build a flower in five minutes.
+A browser-based 3D brick builder where two or more people build together in the same scene, in
+real time. It should be simpler than any existing brick CAD tool: someone who has never used 3D
+software should be able to build a flower in five minutes.
 
-Core use cases:
+**One use case: share a link, a friend joins, you both place bricks in the same scene live.**
+No sign-up, no install, no account.
 
-- **Build together** — share a link, a friend joins, you both place bricks in the same scene live.
-- **Gift a build** — build a bouquet (or anything), attach a letter, send a link. The recipient gets a reveal: the build assembles brick by brick, then the letter appears.
-- **Build it for real** — every build produces an exact parts list mapped to official LEGO element IDs, exportable as a BrickLink Wanted List so people can order the real pieces.
+It ships as a **portfolio piece on hulash.com** — a static page on GitHub Pages, embedded in the
+site as an iframe, backed by one small realtime server on Cloudflare's free tier.
 
-It is also a portfolio piece: a real product backed by a real, end-to-end data platform.
+What it is deliberately _not_: an account system, a social network, a gift shop, or a data
+platform. An earlier version of this plan had all four. See §6a.
 
 ## 2. Principles
 
 1. **Multiplayer-first.** Build state is a CRDT (Yjs) from day one. A solo session is just a room with one person.
 2. **Simplicity over power.** Small curated palette, forgiving snapping, unlimited undo. Every feature must pass the "five-minute flower" test.
-3. **Free to run.** Free tiers only for anything hosted. Heavy data tooling runs locally in Docker.
-4. **The app never depends on the laptop.** The live site works even when the local data platform is off. Data outputs are enhancements with SQL fallbacks.
-5. **Only buyable parts.** The palette is driven by a catalogue pipeline so users can't build with discontinued pieces (from Phase 3 on).
-6. **Integer grid.** Brick positions are stored as integer grid coordinates, never floats, so concurrent edits never drift.
+3. **Free to run, forever, unattended.** Free tiers only, and nothing that depends on a machine being switched on. The site has to work at 3am when a stranger clicks the portfolio link.
+4. **No accounts.** The URL is the only identity. If a feature needs a login, it is the wrong feature for this project.
+5. **Integer grid.** Brick positions are stored as integer grid coordinates, never floats, so concurrent edits never drift.
 
 ## 3. Architecture
 
+Two pieces, both on free tiers, no database anywhere.
+
 ```
-            ┌───────────────── App layer (free cloud tiers) ─────────────────┐
-            │                                                                │
-  Browser ──┤  Next.js + React Three Fiber  ──ws──▶  Realtime server         │
-            │  (apps/web, Vercel)                  (Yjs on Cloudflare         │
-            │                                       Durable Objects,         │
-            │                                       apps/realtime)           │
-            │            │                                  │                │
-            │            └────────────▶  Supabase  ◀────────┘                │
-            │                    (Postgres, Auth, Storage) — from Phase 2    │
-            └────────────────────────────────┬───────────────────────────────┘
-                                             │ CDC (Debezium)
-            ┌──────────────── Data platform (local Docker) ─┴────────────────┐
-            │  Redpanda ─▶ Spark Structured Streaming ─▶ Delta on MinIO       │
-            │  Rebrickable API ─▶ batch ingest ─▶ Delta                       │
-            │  dbt + DuckDB (gold models) ─▶ reverse ETL ─▶ Supabase          │
-            │  Airflow orchestrates · dbt tests for quality                   │
-            │  Databricks Free Edition for the recommendation model           │
-            └─────────────────────────────────────────────────────────────────┘
+   hulash.com                      GitHub Pages                  Cloudflare Workers
+  ┌─────────────┐   iframe        ┌──────────────────┐   wss    ┌───────────────────┐
+  │ portfolio   │────────────────▶│ Kumitate         │─────────▶│ BuildRoom         │
+  │ page        │                 │ static export    │          │ Durable Object    │
+  └─────────────┘                 │ Next.js + R3F    │◀─────────│ one per room id   │
+                                  │ (apps/web)       │  sync +  │ (apps/realtime)   │
+                                  └──────────────────┘ presence └───────────────────┘
+                                                                  Yjs doc + snapshot
+                                                                  in DO SQLite storage
 ```
+
+**Why the split:** GitHub Pages cannot hold a WebSocket open, and multiplayer needs one. So the
+page is static and the ~150 lines that need a server live in a Worker. SQLite-backed Durable
+Objects are on the Workers free plan (100k requests/day), which is what makes this cost nothing.
+
+The build state is a Yjs CRDT; the Durable Object stores a snapshot so a room survives everyone
+closing the tab. That is the entire backend.
 
 ### Tech decisions
 
-| Area                | Choice                                        | Why                                                       | Alternative considered               |
-| ------------------- | --------------------------------------------- | --------------------------------------------------------- | ------------------------------------ |
-| App language        | TypeScript (strict)                           | One language across web + realtime                        | Python backend (kept for data layer) |
-| Frontend            | Next.js (App Router)                          | Matches hulash.com, free Vercel hosting                   | Vite SPA                             |
-| 3D                  | three.js via React Three Fiber + drei         | Mature, LDraw loader available                            | Babylon.js                           |
-| Multiplayer state   | Yjs (CRDT) + awareness                        | Conflict-free concurrent edits, presence built in         | Liveblocks (paid tiers)              |
-| Realtime transport  | y-partyserver on Cloudflare Durable Objects   | Free tier, same code local and deployed                   | Self-hosted y-websocket              |
-| Local UI state      | Zustand                                       | Small, simple                                             | Redux                                |
-| DB / auth / storage | Supabase                                      | Free tier, Postgres for CDC                               | Firebase                             |
-| Brick geometry      | Procedural (Phase 1) → LDraw meshes (Phase 4) | Fast soft start, keyed by LDraw IDs so swap is painless   | LDraw from day one                   |
-| Parts mapping       | Rebrickable API                               | Maps LDraw IDs ↔ LEGO element IDs ↔ BrickLink IDs         | Manual mapping                       |
-| Ordering export     | BrickLink Wanted List XML + LEGO element IDs  | No public LEGO Pick a Brick API                           | —                                    |
-| Streaming           | Redpanda + Spark Structured Streaming         | Kafka API, single container; Spark aligns with Databricks | Flink                                |
-| Table format        | Delta Lake on MinIO                           | Databricks-aligned                                        | Iceberg                              |
-| Modelling           | dbt + DuckDB                                  | Free, fast, portfolio standard                            | —                                    |
-| Orchestration       | Airflow                                       | Industry standard                                         | Dagster                              |
+| Area               | Choice                                      | Why                                                                          | Alternative considered               |
+| ------------------ | ------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------ |
+| App language       | TypeScript (strict)                         | One language across web + realtime                                           | Python backend (kept for data layer) |
+| Frontend           | Next.js (App Router), static export         | Matches hulash.com; `output: "export"` gives a folder GitHub Pages can serve | Vite SPA                             |
+| Hosting            | GitHub Pages                                | Free, same repo as the code, embeds cleanly in an iframe                     | Vercel                               |
+| 3D                 | three.js via React Three Fiber + drei       | Mature, LDraw loader available                                               | Babylon.js                           |
+| Multiplayer state  | Yjs (CRDT) + awareness                      | Conflict-free concurrent edits, presence built in                            | Liveblocks (paid tiers)              |
+| Realtime transport | y-partyserver on Cloudflare Durable Objects | Free tier, same code local and deployed                                      | Self-hosted y-websocket              |
+| Local UI state     | Zustand                                     | Small, simple                                                                | Redux                                |
+| Persistence        | Durable Object SQLite storage               | The only storage the product needs; no database to run or pay for            | Supabase, Postgres                   |
+| Brick geometry     | Procedural                                  | Keyed by LDraw IDs, so real meshes remain a drop-in later                    | LDraw meshes from day one            |
+| Build portability  | Versioned JSON export/import                | Replaces "saved builds" without an account or a backend                      | Server-side saved builds             |
 
 ## 4. Repository structure
 
@@ -77,12 +75,11 @@ It is also a portfolio piece: a real product backed by a real, end-to-end data p
 ├── CLAUDE.md                ← short pointer to PLAN.md + working rules
 ├── package.json             ← pnpm workspaces
 ├── apps/
-│   ├── web/                 ← Next.js app (builder, rooms, later gifts/feed)
+│   ├── web/                 ← Next.js app, static export → GitHub Pages
 │   └── realtime/            ← Cloudflare Worker, Yjs rooms on Durable Objects
 ├── packages/
 │   └── brick-core/          ← shared types, part catalogue, colours, grid math, collision, schema
-└── data/                    ← data platform (Phase 3+): docker-compose, dbt, airflow, spark jobs
-    └── README.md
+└── .github/workflows/       ← lint, typecheck, test, build, publish to Pages
 ```
 
 ## 5. Core data model
@@ -113,9 +110,13 @@ Yjs layout: `doc.getMap("bricks")` keyed by brick id → `Y.Map` of the fields a
 
 `{ name, color, cursor: {x,y,z} | null, ghost: { part, color, rot } | null }`
 
-### Later tables (Supabase, Phase 2+)
+### Persistence
 
-`profiles`, `builds` (id, room_id, owner, title, snapshot jsonb, thumbnail_url), `gifts` (id, build_snapshot jsonb, letter, sender, created_at, opened_at), `likes`, `comments`, `events` (append-only activity log for CDC).
+There is no database. The Durable Object keeps the room's Yjs state as a chunked snapshot in its
+own SQLite storage, so a room survives everyone closing the tab. Chunked because a single
+Durable Object storage value is capped at 128 KiB and a busy room exceeds that.
+
+Anything a person wants to keep, they export as JSON.
 
 ## 6. Phases
 
@@ -142,56 +143,75 @@ Goal: two browser windows on one machine, building together in the same scene.
 
 **Known soft-start limitation:** if two people place overlapping bricks in the same instant, both may land. Acceptable for now; Phase 2 adds a deterministic post-merge resolver.
 
-### Phase 2 — Gifting + accounts + deploy
+### Phase 2 — Ship it as a portfolio piece
 
-- [ ] Supabase auth (magic link), profiles
-- [ ] Save named builds, list "my builds"
+**Scope was cut here (2026-10-21).** The original Phase 2–5 plan — accounts, a gift flow,
+Supabase, the data platform, a social feed, recommendations — is **dropped**. The project is now
+exactly what its one-line description says: share a link, build together. Anything that does not
+serve that is out.
+
+See §6a for what was cut and why, and §10 for the ideas kept on ice.
+
 - [x] Templates: flower stem, heart, card frame
-- [ ] Gift flow: snapshot build + letter → share link
-- [~] Reveal page (no account needed): bricks assemble, then the letter — animation and a live
-  preview at `/build/[roomId]/reveal` are done; wiring it to a stored gift needs Supabase.
-  Assembly order is bottom-up rather than placement order (see the progress log).
 - [x] Concurrent-collision resolver
-- [ ] Deploy web to Vercel, realtime to Cloudflare
+- [x] Reveal animation (`/reveal/?room=…`) — kept purely because it looks good on a portfolio page
+- [x] Static export for GitHub Pages (`output: "export"`, configurable `basePath`)
+- [x] Rooms moved from `/build/[roomId]` to `/build/?room=…` — a static host cannot resolve a
+      path segment invented by a visitor
+- [x] GitHub Actions workflow: lint, typecheck, test, build, publish to Pages
+- [ ] Deploy the realtime worker to Cloudflare (`pnpm --filter @kumitate/realtime deploy`)
+- [ ] Set `NEXT_PUBLIC_REALTIME_HOST` repo variable to the deployed worker
+- [ ] Embed on hulash.com as an iframe
 
-### Phase 3 — Real parts: catalogue pipeline + parts list
+**Done when:** a stranger can open the embedded builder on the portfolio site, press _Start
+building_, send the link to a friend, and the two of them build together.
 
-- [ ] `data/` docker-compose: MinIO, Spark, Airflow, DuckDB/dbt
-- [ ] Daily Rebrickable ingest (parts, colours, elements) → Delta bronze/silver
-- [ ] dbt gold: `buyable_parts` (part × colour with a current element ID)
-- [ ] Reverse ETL to Supabase; builder palette reads from it (fallback: static catalogue)
-- [ ] Parts list panel: counts per part/colour, LEGO element IDs
-- [ ] BrickLink Wanted List XML export
-- [ ] Optional: BrickLink price guide → estimated cost per build
+### 6a. What was cut, and why
 
-### Phase 4 — Social feed, overlays, activity streaming
+| Cut                                                 | Why                                                                                                       |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Supabase, accounts, magic-link auth                 | A shared link is the only identity the product needs. An account is a wall in front of a toy.             |
+| Saved builds, "my builds"                           | Needs accounts. Export/import JSON covers the same need with no backend.                                  |
+| Gift flow + stored letters                          | Needs a database. The reveal animation survives; the storage does not.                                    |
+| Vercel                                              | GitHub Pages hosts a static export for free and keeps the whole thing in one repo.                        |
+| Rebrickable pipeline, parts list, BrickLink export  | Phase 3's entire reason was the data-platform portfolio angle. Different project.                         |
+| Social feed, likes, comments                        | Needs accounts and moderation. Not a toy any more.                                                        |
+| Debezium / Redpanda / Spark / Delta / Airflow / dbt | Same. A laptop-only data platform cannot back a site that must work when the laptop is off (principle 4). |
+| Databricks recommendations                          | Nothing to recommend without a feed.                                                                      |
 
-- [ ] Publish builds to a feed, likes, comments
-- [ ] Overlays: decals/printed tiles, preset materials (chrome, transparent, metallic), shader effects (glow, holographic, toon)
-- [ ] Swap procedural geometry for LDraw meshes (instanced)
-- [ ] `events` table → Debezium CDC → Redpanda → Spark → Delta
-- [ ] dbt models for trending builds, active rooms, gift funnel
-- [ ] Dashboards
-
-### Phase 5 — Recommendations
-
-- [ ] Recommendation model in Databricks Free Edition
-- [ ] Reverse ETL "you might like" into the feed (fallback: most liked recent)
+The one thing genuinely lost is server-side persistence of _named_ builds. Rooms still persist in
+the Durable Object, and anyone can export a build to JSON, so nothing is unrecoverable.
 
 ## 7. Legal and attribution
 
-- No "LEGO" in the product name, logo or domain. Saying parts can be ordered from LEGO / BrickLink is fine.
-- LDraw parts library is CC BY 2.0: credit LDraw when meshes are used.
-- Rebrickable API: follow their terms and credit them on the parts list page.
-- Verify current terms before Phase 3 and Phase 4.
+- No "LEGO" in the product name, logo or domain.
+- Part identifiers, dimensions and colours follow the LDraw standard; the palette comes from
+  `LDConfig.ldr`. Credit LDraw. The parts library is CC BY 2.0 — relevant only if real LDraw
+  meshes are ever bundled, which Phase 1's procedural geometry avoids.
 
 ## 8. Open questions
 
-- Domain for Kumitate
-- Max players per room (start: 8)
-- Do gift recipients get a "build back" button that opens a new shared room with the sender?
+- Max players per room (start: 8 — untested above 2)
+- Should the embedded version hide the landing page and drop you straight into a room?
 
-## 9. Progress log
+## 9. On ice
+
+Not planned, but worth remembering they were considered and why they would be cheap or
+expensive to revive:
+
+- **LDraw meshes instead of procedural geometry.** Cheap — the catalogue is already keyed by
+  LDraw part ID specifically so this is a swap, not a rewrite. Pure client-side.
+- **More parts and colours.** Cheap. Add rows to `parts.ts` / `colors.ts`; the tests enforce
+  that every entry is real and every template still builds.
+- **Bigger or resizable baseplate.** Cheap — `baseplate` is already in the room metadata and
+  every bounds check reads it.
+- **Parts list panel** (counts per part and colour). Cheap and genuinely useful; needs no
+  Rebrickable pipeline, just a tally of the Yjs doc. The BrickLink export would need the legacy
+  IDs already recorded in `aliases`.
+- **Saved/named builds, gift letters, a feed.** Expensive — all need accounts and a database,
+  which is exactly what this scope cut removed.
+
+## 10. Progress log
 
 Claude Code appends one entry per session: date, what was done, what's next, any decisions made.
 
@@ -272,3 +292,41 @@ never on `at()`, which is exactly how it survived Phase 1.
 both deploys. Need a Supabase project URL + anon key, and Vercel and Cloudflare accounts.
 
 **Next.** Supabase auth and the gift flow, once keys are available.
+
+### 2026-10-21 — Scope cut to a shareable portfolio piece
+
+Direction changed: this should be a simple project page on hulash.com where people share a link
+and build together, hosted on GitHub and embedded as an iframe. Nothing more complex.
+
+**Cut.** Supabase, accounts, saved builds, the gift flow and its storage, Vercel, the entire
+Rebrickable/Delta/dbt/Airflow data platform, the social feed, and recommendations. Phases 3–5
+are gone; see §6a for the reasoning per item. Kept the templates, the collision resolver and the
+reveal animation, all of which were already built and none of which need a backend.
+
+**Done.**
+
+- Static export (`output: "export"`, `trailingSlash`, `basePath` from the environment,
+  `.nojekyll`). All four routes now prerender as static.
+- Rooms moved from `/build/[roomId]` to `/build/?room=…` and `/reveal/?room=…`. A static host has
+  no server to resolve a path segment a visitor invented, and `generateStaticParams` cannot
+  enumerate room ids that do not exist yet.
+- GitHub Actions workflow: lint, typecheck and test must pass before anything publishes.
+- Verified by serving the exported folder through a Pages-alike with a `/kumitate` base path —
+  all four routes and all nine referenced assets resolve.
+
+**Decisions made.**
+
+- **Multiplayer stays server-backed on Cloudflare, not peer-to-peer.** y-webrtc would have been
+  100% GitHub with zero accounts, but it depends on public signalling servers that vanish
+  without notice, loses the build the moment the last person disconnects, and fails behind
+  strict networks. For a link a stranger might click at any hour, that is the wrong trade. The
+  Workers free tier costs nothing and SQLite-backed Durable Objects are included.
+- **The realtime host is build-time configuration, and a missing one is now loud.** If the site
+  is deployed anywhere real while still pointing at `127.0.0.1:8787`, the builder shows a
+  banner. Otherwise the failure mode is silent and awful: the page loads, the invite link
+  copies, and nothing ever syncs, because every visitor's browser is dialling their own machine.
+- **The invite link is built from the embedded app's own URL.** When framed, that is the Pages
+  URL, so a recipient lands in the builder rather than somewhere on a portfolio page they would
+  have to scroll. The parent URL is not readable cross-origin anyway.
+
+**Next.** Deploy the worker, set the repo variable, embed on hulash.com.
