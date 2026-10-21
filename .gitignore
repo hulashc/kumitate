@@ -2,8 +2,11 @@ node_modules/
 dist/
 .next/
 out/
-build/
 coverage/
+
+# No bare `build/` here. It would match the `src/app/build/` route directory and silently
+# un-commit the app's main page — which is exactly what happened once. Build output lives in
+# out/, .next/ and .wrangler/, all covered above.
 
 # wrangler
 .wrangler/

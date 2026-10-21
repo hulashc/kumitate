@@ -60,6 +60,19 @@ jobs:
           NEXT_PUBLIC_REALTIME_HOST: ${{ vars.NEXT_PUBLIC_REALTIME_HOST }}
         run: pnpm --filter @kumitate/web build
 
+      # A route missing from the export is invisible until someone hits a 404 on the live site.
+      # This caught a .gitignore rule that was silently excluding the whole /build route.
+      - name: Verify the export contains every route
+        run: |
+          missing=0
+          for page in index.html build/index.html reveal/index.html .nojekyll; do
+            if [ ! -e "apps/web/out/$page" ]; then
+              echo "::error::missing from static export: $page"
+              missing=1
+            fi
+          done
+          exit $missing
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
