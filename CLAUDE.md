@@ -45,6 +45,11 @@ pnpm format      # prettier --write
 
 - `brick-core` must stay dependency-light (zod only) — it is imported by the Worker, which has no
   Node built-ins.
+- `pnpm install` warns about an unmet peer: `y-partyserver@2.2.0` asks for
+  `@cloudflare/workers-types@^4`, but we pin `^5` because its datestamp matches the installed
+  `workerd` runtime and because `wrangler` asks for `^5` too. The two peers are mutually
+  exclusive, so one warning is unavoidable. **Expected — do not "fix" it by downgrading**, which
+  just moves the warning to wrangler. Typecheck passes on v5.
 - Two LDraw part IDs in the Phase 1 brief were renamed by the official library: Plate 1x2 is
   **3023b** (not 3023, moved 2024-07) and Plate 1x1 Round is **6141** (not 4073, moved 2025-04).
   The catalogue keys on the canonical ID and keeps the legacy/BrickLink ID in `aliases` for the

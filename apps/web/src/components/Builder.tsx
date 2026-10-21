@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
-import * as Y from "yjs";
-import { nanoid } from "nanoid";
-import { BASEPLATE_SIZE } from "@kumitate/brick-core";
-import { BuildStore } from "@/lib/buildStore";
+import { BuildScene } from "./BuildScene";
+import { RoomBar } from "./RoomBar";
+import { Toolbar } from "./Toolbar";
+import { PeerGhosts } from "./PeerGhosts";
+import type { GhostState } from "./GhostBrick";
+import { useRoom } from "@/lib/useRoom";
 import { useBricks, useBuildMeta } from "@/lib/useBuildStore";
 import { useUndoState } from "@/lib/useUndoState";
+import { usePeers, useLocalPresence, publishGhost } from "@/lib/useAwareness";
+import { loadIdentity, saveIdentity, type PresenceUser } from "@/lib/presence";
 import { useUiStore } from "@/lib/uiStore";
-import { BuildScene } from "./BuildScene";
-import { Toolbar } from "./Toolbar";
 import styles from "./Builder.module.css";
 
 /** True if the key event came from somewhere the user is typing. */
@@ -25,22 +27,45 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 export function Builder({ roomId }: { roomId: string }) {
-  // One doc and one store for the lifetime of the room view.
-  const [store] = useState(() => new BuildStore(new Y.Doc()));
-  const [clientId] = useState(() => nanoid(8));
+  const { room, status } = useRoom(roomId);
+  // Safe to read localStorage in the initialiser: this component is only ever client-rendered.
+  const [identity, setIdentity] = useState<PresenceUser>(loadIdentity);
   const hoveredRef = useRef<string | null>(null);
+
+  const store = room?.store ?? null;
+  const provider = room?.provider ?? null;
 
   const bricks = useBricks(store);
   const meta = useBuildMeta(store);
   const { canUndo, canRedo } = useUndoState(store);
+  const peers = usePeers(provider);
   const rotate = useUiStore((s) => s.rotate);
 
-  useEffect(() => {
-    store.initialiseMeta({ title: "Untitled build", baseplate: BASEPLATE_SIZE });
-    return () => store.destroy();
-  }, [store]);
+  useLocalPresence(provider, identity);
+
+  const renameIdentity = useCallback(
+    (name: string) => {
+      const next = { ...identity, name };
+      setIdentity(next);
+      saveIdentity(next);
+    },
+    [identity],
+  );
+
+  const onGhostChange = useCallback(
+    (ghost: GhostState | null) => {
+      publishGhost(
+        provider,
+        ghost ? { x: ghost.x, y: ghost.y, z: ghost.z } : null,
+        ghost ? { part: ghost.part.id, color: ghost.color, rot: ghost.rot } : null,
+      );
+    },
+    [provider],
+  );
 
   useEffect(() => {
+    if (!store) return;
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target)) return;
 
@@ -83,14 +108,6 @@ export function Builder({ roomId }: { roomId: string }) {
 
   const baseplateSize = meta.baseplate;
 
-  const camera = useMemo(
-    () => ({
-      position: [baseplateSize * 0.8, baseplateSize * 0.7, baseplateSize * 0.8] as const,
-      fov: 42,
-    }),
-    [baseplateSize],
-  );
-
   return (
     <div className={styles.root}>
       <div
@@ -102,32 +119,48 @@ export function Builder({ roomId }: { roomId: string }) {
         <Canvas
           shadows
           dpr={[1, 2]}
-          camera={{ position: [...camera.position], fov: camera.fov }}
+          camera={{
+            position: [baseplateSize * 0.8, baseplateSize * 0.7, baseplateSize * 0.8],
+            fov: 42,
+          }}
           gl={{ antialias: true }}
         >
           <color attach="background" args={["#0F1720"]} />
           <fog attach="fog" args={["#0F1720", baseplateSize * 1.6, baseplateSize * 3.4]} />
-          <BuildScene
-            store={store}
-            bricks={bricks}
-            baseplateSize={baseplateSize}
-            clientId={clientId}
-            hoveredRef={hoveredRef}
-          />
+
+          {store && room && (
+            <BuildScene
+              store={store}
+              bricks={bricks}
+              baseplateSize={baseplateSize}
+              clientId={room.clientId}
+              hoveredRef={hoveredRef}
+              onGhostChange={onGhostChange}
+            />
+          )}
+
+          <PeerGhosts peers={peers} baseplateSize={baseplateSize} />
         </Canvas>
       </div>
 
-      <header className={styles.header}>
-        <span className={styles.brand}>Kumitate</span>
-        <span className={styles.room}>Room {roomId}</span>
-      </header>
+      {store && (
+        <RoomBar
+          store={store}
+          title={meta.title}
+          status={status}
+          identity={identity}
+          peers={peers}
+          onRenameIdentity={renameIdentity}
+          onRetitle={(title) => store.setMeta({ title })}
+        />
+      )}
 
       <Toolbar
         brickCount={bricks.length}
         canUndo={canUndo}
         canRedo={canRedo}
-        onUndo={() => store.undo()}
-        onRedo={() => store.redo()}
+        onUndo={() => store?.undo()}
+        onRedo={() => store?.redo()}
       />
     </div>
   );
