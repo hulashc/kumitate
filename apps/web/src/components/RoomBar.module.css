@@ -105,8 +105,12 @@
 
 .button,
 .buttonPrimary {
+  display: inline-flex;
+  align-items: center;
   height: 2rem;
   padding: 0 0.7rem;
+  color: var(--fg);
+  text-decoration: none;
   border: 1px solid var(--border);
   border-radius: 0.45rem;
   background: var(--panel-raised);

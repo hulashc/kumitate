@@ -146,9 +146,11 @@ Goal: two browser windows on one machine, building together in the same scene.
 
 - [ ] Supabase auth (magic link), profiles
 - [ ] Save named builds, list "my builds"
-- [ ] Templates: flower stem, heart, card frame
+- [x] Templates: flower stem, heart, card frame
 - [ ] Gift flow: snapshot build + letter → share link
-- [ ] Reveal page (no account needed): bricks assemble in placement order, then the letter
+- [~] Reveal page (no account needed): bricks assemble, then the letter — animation and a live
+  preview at `/build/[roomId]/reveal` are done; wiring it to a stored gift needs Supabase.
+  Assembly order is bottom-up rather than placement order (see the progress log).
 - [x] Concurrent-collision resolver
 - [ ] Deploy web to Vercel, realtime to Cloudflare
 
@@ -229,3 +231,44 @@ interaction behaviour needs the manual test script in the handover.
 
 **Next.** Await feedback on the manual test pass, then Phase 2 (gifting, accounts, deploy),
 starting with the concurrent-collision resolver noted above.
+
+### 2026-10-21 — Phase 2, the half that needs no accounts
+
+Phase 1 confirmed working in the browser. Built the three Phase 2 items that have no external
+dependencies, so the Supabase/Vercel/Cloudflare signups can happen in parallel.
+
+**Done.**
+
+- **Concurrent-collision resolver.** `resolveConflicts()` in brick-core: sort by brick id, replay
+  into a fresh occupancy index, drop what cannot fit.
+- **Templates.** Flower, heart and card frame, armed from the toolbar and stamped as one
+  undoable step.
+- **Reveal animation.** `Reveal` / `RevealScene` components plus a live preview route at
+  `/build/[roomId]/reveal`. Ready for the gift flow to hand it a stored snapshot and a letter.
+
+**Decisions made.**
+
+- **The resolver runs in two places.** The client runs it for instant feedback and tells you when
+  one of your own bricks lost; the Durable Object runs it authoritatively. Client-side alone
+  would mean any client that does not implement it leaves a room inconsistent forever. Both are
+  the same pure function, so the duplicated deletes are harmless.
+- **Lowest brick id wins, not oldest.** A conflict that survives to the merge is by definition
+  concurrent — anything non-concurrent was already refused at placement time — so there is no
+  meaningful "older". An arbitrary but stable tiebreak is the honest choice, and the rule has to
+  be a pure function of the merged document or clients would never converge.
+- **Reveal order is bottom-up, not placement order.** `Brick` has no timestamp, and adding one
+  would record the wall clock of whichever client placed it: not comparable between people and
+  not stable across an export/import. Bottom-up is derivable from the build, identical for
+  everyone, and reads better — a build that rises from the baseplate looks constructed.
+- **The Worker imports brick-core by subpath.** The barrel re-exports the zod schema, which
+  tripled the Worker bundle.
+
+**Bug found and fixed.** `Occupancy.remove` cleared cells that an overlapping survivor still
+occupied, so `at()` reported free space that was full. Only visible once the resolver started
+indexing overlapping bricks. The existing integrity test asserted on `size` and `columnTop` but
+never on `at()`, which is exactly how it survived Phase 1.
+
+**Blocked on accounts.** Supabase auth and profiles, saved builds, the gift flow and storage, and
+both deploys. Need a Supabase project URL + anon key, and Vercel and Cloudflare accounts.
+
+**Next.** Supabase auth and the gift flow, once keys are available.

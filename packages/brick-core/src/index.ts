@@ -5,4 +5,5 @@ export * from "./grid";
 export * from "./collision";
 export * from "./resolve";
 export * from "./templates";
+export * from "./reveal";
 export * from "./schema";

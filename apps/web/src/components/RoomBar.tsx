@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import type { Peer, PresenceUser } from "@/lib/presence";
 import type { ConnectionStatus } from "@/lib/useRoom";
 import type { BuildStore } from "@/lib/buildStore";
@@ -23,6 +24,7 @@ function initials(name: string): string {
 
 export function RoomBar({
   store,
+  roomId,
   title,
   status,
   identity,
@@ -31,6 +33,7 @@ export function RoomBar({
   onRetitle,
 }: {
   store: BuildStore;
+  roomId: string;
   title: string;
   status: ConnectionStatus;
   identity: PresenceUser;
@@ -129,6 +132,10 @@ export function RoomBar({
         <button type="button" className={styles.buttonPrimary} onClick={copyInvite}>
           {copied ? "Link copied" : "Copy invite link"}
         </button>
+
+        <Link className={styles.button} href={`/build/${roomId}/reveal`}>
+          Preview reveal
+        </Link>
 
         <button type="button" className={styles.button} onClick={() => downloadBuild(store)}>
           Export

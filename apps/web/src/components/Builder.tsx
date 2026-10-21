@@ -169,6 +169,7 @@ export function Builder({ roomId }: { roomId: string }) {
       {store && (
         <RoomBar
           store={store}
+          roomId={roomId}
           title={meta.title}
           status={status}
           identity={identity}

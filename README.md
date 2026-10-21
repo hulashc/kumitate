@@ -55,6 +55,7 @@ scheme) in `apps/web/.env.local`.
 | Pan                   | **Right-drag**                                                          |
 | Zoom                  | **Scroll**                                                              |
 | Pick a part/colour    | Bottom toolbar                                                          |
+| Stamp a template      | Pick one in the toolbar, then click in the scene (**Esc** cancels)      |
 
 The ghost brick follows your cursor, lands on whatever is underneath it, and turns **red** when
 it cannot be placed. Click and drag are told apart by how far the pointer travels, so orbiting
