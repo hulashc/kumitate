@@ -159,9 +159,11 @@ See §6a for what was cut and why, and §10 for the ideas kept on ice.
 - [x] Rooms moved from `/build/[roomId]` to `/build/?room=…` — a static host cannot resolve a
       path segment invented by a visitor
 - [x] GitHub Actions workflow: lint, typecheck, test, build, publish to Pages
-- [ ] Deploy the realtime worker to Cloudflare (`pnpm --filter @kumitate/realtime deploy`)
-- [ ] Set `NEXT_PUBLIC_REALTIME_HOST` repo variable to the deployed worker
-- [ ] Embed on hulash.com as an iframe
+- [x] Deploy the realtime worker to Cloudflare — `kumitate-realtime.kumitate-realtime.workers.dev`
+- [x] Set `NEXT_PUBLIC_REALTIME_HOST` repo variable to the deployed worker
+- [x] Embed on hulash.com as an iframe — entry added to `portfolio_nextjs/src/data/projects.ts`
+
+**Live:** <https://hulashc.github.io/kumitate/> · repo <https://github.com/hulashc/kumitate>
 
 **Done when:** a stranger can open the embedded builder on the portfolio site, press _Start
 building_, send the link to a friend, and the two of them build together.
@@ -330,3 +332,32 @@ reveal animation, all of which were already built and none of which need a backe
   have to scroll. The parent URL is not readable cross-origin anyway.
 
 **Next.** Deploy the worker, set the repo variable, embed on hulash.com.
+
+### 2026-10-21 — Shipped
+
+Live at <https://hulashc.github.io/kumitate/>, worker at
+`kumitate-realtime.kumitate-realtime.workers.dev`, project entry added to `portfolio_nextjs`.
+
+**Bug found by deploying.** The first Pages build served a 404 for `/build/` — the route the
+entire app lives on. `.gitignore` carried a bare `build/`, which matched the _route directory_
+`apps/web/src/app/build/`, so that file had never been committed. Local dev could not have
+caught it: the file was on disk the whole time, so dev server, build, typecheck, lint and tests
+all passed against a tree that git was not shipping. Fixed by anchoring the ignore rule, and the
+workflow now asserts every expected route exists in the export before publishing.
+
+**Verified against production**, not just locally: `sync-check` drove real WebSocket clients
+through the deployed worker over `wss://` — sync both ways, deletes, persistence after everyone
+disconnects, and concurrent-conflict convergence all pass. The live JS bundle was crawled to
+confirm the worker host is the value actually baked in.
+
+**Notes for next time.**
+
+- The `workflow` OAuth scope turned out not to be needed to push `.github/workflows/`; the
+  existing `repo` scope was enough.
+- `gh api -X POST repos/:owner/:repo/pages -f build_type=workflow` enables Pages with Actions as
+  the source without touching the web UI.
+- The portfolio's `embed` section type already sets `allow="…clipboard-write…"`, so the invite
+  button works inside the iframe with no change needed there.
+
+**Outstanding:** a screenshot at `portfolio_nextjs/public/images/kumitate.jpg`, and pushing the
+portfolio commit.
